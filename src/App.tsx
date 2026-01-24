@@ -4,10 +4,94 @@ import './App.css'
 function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null)
+  const [openChecklistIndex, setOpenChecklistIndex] = useState<number | null>(0)
 
   const toggleFaq = (index: number) => {
     setOpenFaqIndex(openFaqIndex === index ? null : index)
   }
+
+  const toggleChecklist = (index: number) => {
+    setOpenChecklistIndex(openChecklistIndex === index ? null : index)
+  }
+
+  const checklistData = [
+    {
+      title: "Identification & Loan Details",
+      icon: "🪪",
+      items: [
+        "Government-issued photo ID (driver's license or passport)",
+        "Social Security number for all borrowers",
+        "Current mortgage statement",
+        "Loan number and servicer contact information",
+        "Proof of residence (utility bill with property address)",
+        "Property tax bill",
+        "Homeowners insurance declarations page",
+        "HOA bill (if applicable)"
+      ]
+    },
+    {
+      title: "Income & Asset Documentation",
+      icon: "💵",
+      items: [
+        "Recent pay stubs (last 30 days)",
+        "Last two years of W-2 forms",
+        "Last two years of federal tax returns (all pages)",
+        "Year-to-date profit & loss statement (if self-employed)",
+        "IRS Form 4506-T or 4506-EZ (to verify tax info)",
+        "Unemployment benefit statements (if applicable)",
+        "Social Security or disability award letters (if applicable)",
+        "Pension or retirement income documentation",
+        "Child support or alimony court orders (if applicable)",
+        "Rental income documentation (lease agreements)",
+        "Recent bank statements (checking, savings, investments)"
+      ]
+    },
+    {
+      title: "Monthly Expenses & Budget",
+      icon: "📊",
+      items: [
+        "Current housing costs (mortgage, taxes, insurance)",
+        "Utility bills (electric, gas, water, internet)",
+        "Food and grocery expenses",
+        "Transportation costs (car payment, insurance, gas)",
+        "Health insurance and medical costs",
+        "Credit card minimum payments",
+        "Personal loan payments",
+        "Student loan payments",
+        "Child support or alimony obligations",
+        "Childcare or dependent care costs",
+        "Income-and-expense worksheet (servicer may provide form)"
+      ]
+    },
+    {
+      title: "Hardship Explanation & Proof",
+      icon: "📝",
+      items: [
+        "Hardship letter explaining your situation",
+        "When the hardship started",
+        "Whether it's temporary or permanent",
+        "What payment you believe you can afford",
+        "Job loss: Termination or layoff letter",
+        "Reduced hours: Notice from employer",
+        "Medical hardship: Medical bills or doctor's notes",
+        "Divorce: Divorce decree or separation agreement",
+        "Death in family: Death certificate",
+        "Unemployment: Benefit award letter"
+      ]
+    },
+    {
+      title: "Servicer Forms & Authorizations",
+      icon: "📋",
+      items: [
+        "Loss mitigation or loan modification application",
+        "Servicer's specific request for modification (RMA) form",
+        "Contribution letter (if someone helps pay mortgage)",
+        "Third-party authorization form (for counselor or attorney)",
+        "Signed and dated certification statements",
+        "Any additional forms requested by your servicer"
+      ]
+    }
+  ]
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -146,6 +230,7 @@ function App() {
           <ul className={`nav-links ${mobileMenuOpen ? 'active' : ''}`}>
             <li><a href="#steps" onClick={() => setMobileMenuOpen(false)}>Get Started</a></li>
             <li><a href="#options" onClick={() => setMobileMenuOpen(false)}>Your Options</a></li>
+            <li><a href="#checklist" onClick={() => setMobileMenuOpen(false)}>Documents</a></li>
             <li><a href="#resources" onClick={() => setMobileMenuOpen(false)}>Resources</a></li>
             <li><a href="#faq" onClick={() => setMobileMenuOpen(false)}>FAQ</a></li>
             <li><a href="#contact" onClick={() => setMobileMenuOpen(false)}>Contact</a></li>
@@ -215,6 +300,52 @@ function App() {
                   </ul>
                 </article>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Loan Modification Checklist Section */}
+        <section id="checklist" className="checklist">
+          <div className="container">
+            <div className="section-title">
+              <h2>Loan Modification Document Checklist</h2>
+              <p>Gather these documents before applying for a loan modification. Being prepared speeds up the process.</p>
+            </div>
+            <div className="checklist-container">
+              {checklistData.map((category, index) => (
+                <div key={index} className={`checklist-category ${openChecklistIndex === index ? 'open' : ''}`}>
+                  <button
+                    className="checklist-header"
+                    onClick={() => toggleChecklist(index)}
+                    aria-expanded={openChecklistIndex === index}
+                    aria-controls={`checklist-content-${index}`}
+                  >
+                    <span className="checklist-icon" aria-hidden="true">{category.icon}</span>
+                    <span className="checklist-title">{category.title}</span>
+                    <span className="checklist-toggle" aria-hidden="true">{openChecklistIndex === index ? '−' : '+'}</span>
+                  </button>
+                  <div
+                    id={`checklist-content-${index}`}
+                    className="checklist-content"
+                    role="region"
+                  >
+                    <ul className="checklist-items">
+                      {category.items.map((item, i) => (
+                        <li key={i}>
+                          <label className="checklist-item">
+                            <input type="checkbox" />
+                            <span className="checkmark"></span>
+                            <span className="item-text">{item}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="checklist-tip">
+              <strong>Tip:</strong> Make copies of all documents before submitting. Keep originals in a safe place and note the date you sent each item.
             </div>
           </div>
         </section>
@@ -334,6 +465,7 @@ function App() {
               <ul>
                 <li><a href="#steps">Get Started</a></li>
                 <li><a href="#options">Your Options</a></li>
+                <li><a href="#checklist">Document Checklist</a></li>
                 <li><a href="#resources">Resources</a></li>
                 <li><a href="#faq">FAQ</a></li>
                 <li><a href="#contact">Contact Us</a></li>
