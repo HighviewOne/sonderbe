@@ -1,0 +1,7 @@
+export { HomePage } from './HomePage'
+export { LoginPage } from './LoginPage'
+export { SignupPage } from './SignupPage'
+export { ForgotPasswordPage } from './ForgotPasswordPage'
+export { ResetPasswordPage } from './ResetPasswordPage'
+export { PortalPage } from './PortalPage'
+export { AdminPage } from './AdminPage'
