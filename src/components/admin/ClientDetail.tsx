@@ -1,8 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
 import type { Profile, ContactSubmission, Document, ChecklistProgress } from '../../lib/supabase'
 import { checklistData } from '../../lib/constants'
+import { apiGet, apiPatch } from '../../lib/api'
+
+interface ClientData {
+  profile: Profile
+  submissions: ContactSubmission[]
+  documents: Document[]
+  checklist: ChecklistProgress[]
+}
 
 export function ClientDetail() {
   const { clientId } = useParams<{ clientId: string }>()
@@ -22,35 +29,40 @@ export function ClientDetail() {
     if (!clientId) return
     setLoading(true)
 
-    const profileResult = await supabase.from('profiles').select('*').eq('id', clientId).single()
-    const submissionsResult = await supabase.from('contact_submissions').select('*').eq('user_id', clientId).order('created_at', { ascending: false })
-    const documentsResult = await supabase.from('documents').select('*').eq('user_id', clientId).order('created_at', { ascending: false })
-    const checklistResult = await supabase.from('checklist_progress').select('*').eq('user_id', clientId)
-
-    if (profileResult.data) setClient(profileResult.data as Profile)
-    if (submissionsResult.data) setSubmissions(submissionsResult.data as ContactSubmission[])
-    if (documentsResult.data) setDocuments(documentsResult.data as Document[])
-    if (checklistResult.data) setChecklistProgress(checklistResult.data as ChecklistProgress[])
+    try {
+      const data = await apiGet<ClientData>(`/admin/clients/${clientId}`)
+      setClient(data.profile)
+      setSubmissions(data.submissions)
+      setDocuments(data.documents)
+      setChecklistProgress(data.checklist)
+    } catch (err) {
+      console.error('Error loading client data:', err)
+    }
 
     setLoading(false)
   }
 
   const updateDocumentStatus = async (docId: string, status: Document['status'], notes?: string) => {
-    const { error } = await supabase
-      .from('documents')
-      .update({ status, admin_notes: notes, updated_at: new Date().toISOString() })
-      .eq('id', docId)
+    try {
+      const updateData: Record<string, unknown> = { status }
+      if (notes !== undefined) updateData.admin_notes = notes
 
-    if (!error) {
+      await apiPatch(`/documents/${docId}`, updateData)
       setDocuments(docs =>
         docs.map(d => d.id === docId ? { ...d, status, admin_notes: notes || d.admin_notes } : d)
       )
+    } catch (err) {
+      console.error('Error updating document:', err)
     }
   }
 
-  const getDownloadUrl = async (filePath: string) => {
-    const { data } = await supabase.storage.from('client-documents').createSignedUrl(filePath, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  const handleDownload = async (docId: string) => {
+    try {
+      const data = await apiGet<{ url: string }>(`/documents/${docId}/download`)
+      if (data.url) window.open(data.url, '_blank')
+    } catch (err) {
+      console.error('Error getting download URL:', err)
+    }
   }
 
   const getChecklistStats = () => {
@@ -160,7 +172,7 @@ export function ClientDetail() {
                       <td>
                         <button
                           className="link-button"
-                          onClick={() => getDownloadUrl(doc.file_path)}
+                          onClick={() => handleDownload(doc.id)}
                         >
                           {doc.file_name}
                         </button>
@@ -182,7 +194,7 @@ export function ClientDetail() {
                       <td>
                         <button
                           className="btn btn-small"
-                          onClick={() => getDownloadUrl(doc.file_path)}
+                          onClick={() => handleDownload(doc.id)}
                         >
                           Download
                         </button>

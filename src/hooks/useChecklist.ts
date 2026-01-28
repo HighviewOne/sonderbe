@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
 import type { ChecklistProgress } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { checklistData } from '../lib/constants'
+import { apiGet, apiPut } from '../lib/api'
 
 interface ChecklistState {
   [key: string]: boolean
@@ -24,22 +24,16 @@ export function useChecklist() {
     }
 
     setLoading(true)
-    const { data, error } = await supabase
-      .from('checklist_progress')
-      .select('*')
-      .eq('user_id', user.id)
-
-    if (error) {
-      console.error('Error loading checklist:', error)
-      setLoading(false)
-      return
+    try {
+      const data = await apiGet<ChecklistProgress[]>('/checklist')
+      const newState: ChecklistState = {}
+      data.forEach((item) => {
+        newState[getKey(item.category_index, item.item_index)] = item.is_checked
+      })
+      setCheckedItems(newState)
+    } catch (err) {
+      console.error('Error loading checklist:', err)
     }
-
-    const newState: ChecklistState = {}
-    data?.forEach((item: ChecklistProgress) => {
-      newState[getKey(item.category_index, item.item_index)] = item.is_checked
-    })
-    setCheckedItems(newState)
     setLoading(false)
   }, [user])
 
@@ -60,20 +54,14 @@ export function useChecklist() {
 
     setSaving(true)
 
-    const { error } = await supabase
-      .from('checklist_progress')
-      .upsert({
-        user_id: user.id,
+    try {
+      await apiPut('/checklist', {
         category_index: categoryIndex,
         item_index: itemIndex,
-        is_checked: newValue,
-        checked_at: newValue ? new Date().toISOString() : null
-      }, {
-        onConflict: 'user_id,category_index,item_index'
+        is_checked: newValue
       })
-
-    if (error) {
-      console.error('Error saving checklist item:', error)
+    } catch (err) {
+      console.error('Error saving checklist item:', err)
       setCheckedItems(prev => ({
         ...prev,
         [key]: !newValue

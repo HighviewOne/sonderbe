@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
 import type { Profile } from '../../lib/supabase'
+import { apiGet } from '../../lib/api'
 
 export function ClientList() {
   const [clients, setClients] = useState<Profile[]>([])
@@ -14,16 +14,11 @@ export function ClientList() {
 
   const loadClients = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'client')
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error loading clients:', error)
-    } else {
-      setClients(data as Profile[])
+    try {
+      const data = await apiGet<Profile[]>('/admin/clients')
+      setClients(data)
+    } catch (err) {
+      console.error('Error loading clients:', err)
     }
     setLoading(false)
   }

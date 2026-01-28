@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
 import type { ContactSubmission } from '../../lib/supabase'
+import { apiGet, apiPatch } from '../../lib/api'
 
 type StatusFilter = 'all' | ContactSubmission['status']
 
@@ -18,45 +18,37 @@ export function SubmissionsList() {
 
   const loadSubmissions = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('contact_submissions')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error loading submissions:', error)
-    } else {
-      setSubmissions(data as ContactSubmission[])
+    try {
+      const data = await apiGet<ContactSubmission[]>('/submissions')
+      setSubmissions(data)
+    } catch (err) {
+      console.error('Error loading submissions:', err)
     }
     setLoading(false)
   }
 
   const updateStatus = async (id: string, status: ContactSubmission['status']) => {
-    const { error } = await supabase
-      .from('contact_submissions')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id)
-
-    if (!error) {
+    try {
+      await apiPatch(`/submissions/${id}`, { status })
       setSubmissions(subs =>
         subs.map(s => s.id === id ? { ...s, status } : s)
       )
+    } catch (err) {
+      console.error('Error updating submission:', err)
     }
   }
 
   const saveNotes = async () => {
     if (!editingNotes) return
 
-    const { error } = await supabase
-      .from('contact_submissions')
-      .update({ admin_notes: editingNotes.notes, updated_at: new Date().toISOString() })
-      .eq('id', editingNotes.id)
-
-    if (!error) {
+    try {
+      await apiPatch(`/submissions/${editingNotes.id}`, { admin_notes: editingNotes.notes })
       setSubmissions(subs =>
         subs.map(s => s.id === editingNotes.id ? { ...s, admin_notes: editingNotes.notes } : s)
       )
       setEditingNotes(null)
+    } catch (err) {
+      console.error('Error saving notes:', err)
     }
   }
 

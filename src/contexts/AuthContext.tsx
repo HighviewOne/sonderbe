@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { User, Session, AuthError } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Profile } from '../lib/supabase'
+import { apiGet } from '../lib/api'
 
 interface AuthContextType {
   user: User | null
@@ -25,18 +26,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-
-    if (error) {
+  const fetchProfile = async (_userId: string) => {
+    try {
+      return await apiGet<Profile>('/profile')
+    } catch (error) {
       console.error('Error fetching profile:', error)
       return null
     }
-    return data as Profile
   }
 
   useEffect(() => {
@@ -67,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signUp = async (email: string, password: string, fullName?: string, phone?: string) => {
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -77,22 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     })
-
-    if (!error && data.user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: data.user.id,
-          email: email,
-          full_name: fullName || null,
-          phone: phone || null,
-          role: 'client'
-        })
-
-      if (profileError) {
-        console.error('Error creating profile:', profileError)
-      }
-    }
 
     return { error }
   }

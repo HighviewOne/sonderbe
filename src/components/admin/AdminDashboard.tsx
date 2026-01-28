@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
 import type { Profile, ContactSubmission } from '../../lib/supabase'
+import { apiGet } from '../../lib/api'
 
 interface Stats {
   totalClients: number
@@ -28,34 +28,12 @@ export function AdminDashboard() {
   const loadStats = async () => {
     setLoading(true)
 
-    const [clientsResult, submissionsResult, documentsResult] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'client')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('contact_submissions')
-        .select('*')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('documents')
-        .select('*')
-        .eq('status', 'uploaded')
-    ])
-
-    const clients = (clientsResult.data || []) as Profile[]
-    const submissions = (submissionsResult.data || []) as ContactSubmission[]
-    const pendingDocs = documentsResult.data?.length || 0
-    const newSubs = submissions.filter(s => s.status === 'new').length
-
-    setStats({
-      totalClients: clients.length,
-      newSubmissions: newSubs,
-      pendingDocuments: pendingDocs,
-      recentClients: clients.slice(0, 5),
-      recentSubmissions: submissions.slice(0, 5)
-    })
+    try {
+      const data = await apiGet<Stats>('/admin/stats')
+      setStats(data)
+    } catch (err) {
+      console.error('Error loading stats:', err)
+    }
 
     setLoading(false)
   }

@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
 import type { Document, Profile } from '../../lib/supabase'
+import { apiGet, apiPatch } from '../../lib/api'
 
 type StatusFilter = 'all' | Document['status']
 
 interface DocumentWithClient extends Document {
-  client?: Profile
+  client?: Profile | null
 }
 
 export function DocumentsReview() {
@@ -22,66 +22,48 @@ export function DocumentsReview() {
   const loadDocuments = async () => {
     setLoading(true)
 
-    const { data: docs, error: docsError } = await supabase
-      .from('documents')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (docsError) {
-      console.error('Error loading documents:', docsError)
-      setLoading(false)
-      return
+    try {
+      const data = await apiGet<DocumentWithClient[]>('/admin/documents')
+      setDocuments(data)
+    } catch (err) {
+      console.error('Error loading documents:', err)
     }
 
-    const userIds = [...new Set((docs as Document[]).map(d => d.user_id))]
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('*')
-      .in('id', userIds)
-
-    const profileMap = new Map((profiles as Profile[] || []).map(p => [p.id, p]))
-
-    const docsWithClients = (docs as Document[]).map(doc => ({
-      ...doc,
-      client: profileMap.get(doc.user_id)
-    }))
-
-    setDocuments(docsWithClients)
     setLoading(false)
   }
 
   const updateStatus = async (id: string, status: Document['status']) => {
-    const { error } = await supabase
-      .from('documents')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id)
-
-    if (!error) {
+    try {
+      await apiPatch(`/documents/${id}`, { status })
       setDocuments(docs =>
         docs.map(d => d.id === id ? { ...d, status } : d)
       )
+    } catch (err) {
+      console.error('Error updating document status:', err)
     }
   }
 
   const saveNotes = async () => {
     if (!editingNotes) return
 
-    const { error } = await supabase
-      .from('documents')
-      .update({ admin_notes: editingNotes.notes, updated_at: new Date().toISOString() })
-      .eq('id', editingNotes.id)
-
-    if (!error) {
+    try {
+      await apiPatch(`/documents/${editingNotes.id}`, { admin_notes: editingNotes.notes })
       setDocuments(docs =>
         docs.map(d => d.id === editingNotes.id ? { ...d, admin_notes: editingNotes.notes } : d)
       )
       setEditingNotes(null)
+    } catch (err) {
+      console.error('Error saving notes:', err)
     }
   }
 
-  const getDownloadUrl = async (filePath: string) => {
-    const { data } = await supabase.storage.from('client-documents').createSignedUrl(filePath, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  const handleDownload = async (docId: string) => {
+    try {
+      const data = await apiGet<{ url: string }>(`/documents/${docId}/download`)
+      if (data.url) window.open(data.url, '_blank')
+    } catch (err) {
+      console.error('Error getting download URL:', err)
+    }
   }
 
   const filteredDocs = statusFilter === 'all'
@@ -154,7 +136,7 @@ export function DocumentsReview() {
                   <td>
                     <button
                       className="link-button file-name"
-                      onClick={() => getDownloadUrl(doc.file_path)}
+                      onClick={() => handleDownload(doc.id)}
                     >
                       {doc.file_name}
                     </button>
@@ -186,7 +168,7 @@ export function DocumentsReview() {
                   <td className="actions-cell">
                     <button
                       className="btn btn-small"
-                      onClick={() => getDownloadUrl(doc.file_path)}
+                      onClick={() => handleDownload(doc.id)}
                     >
                       View
                     </button>

@@ -45,7 +45,7 @@ export function DocumentUpload() {
   }
 
   const handleDownload = async (doc: typeof documents[0]) => {
-    const url = await getDownloadUrl(doc.file_path)
+    const url = await getDownloadUrl(doc.file_path, doc.id)
     if (url) {
       window.open(url, '_blank')
     }
