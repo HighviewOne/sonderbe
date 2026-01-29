@@ -16,6 +16,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>
   updatePassword: (password: string) => Promise<{ error: AuthError | null }>
   isAdmin: boolean
+  isInvestor: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -114,7 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOut,
     resetPassword,
     updatePassword,
-    isAdmin: profile?.role === 'admin'
+    isAdmin: profile?.role === 'admin',
+    isInvestor: profile?.role === 'investor'
   }
 
   return (

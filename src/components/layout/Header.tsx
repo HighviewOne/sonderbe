@@ -4,12 +4,13 @@ import { useAuth } from '../../hooks/useAuth'
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const { user, profile, signOut, isAdmin } = useAuth()
+  const { user, profile, signOut, isAdmin, isInvestor } = useAuth()
   const location = useLocation()
 
   const isHomePage = location.pathname === '/'
   const isPortalPage = location.pathname.startsWith('/portal')
   const isAdminPage = location.pathname.startsWith('/admin')
+  const isInvestorPage = location.pathname.startsWith('/investor')
 
   const handleSignOut = async () => {
     await signOut()
@@ -31,13 +32,16 @@ export function Header() {
               <li><a href="#contact" onClick={() => setMobileMenuOpen(false)}>Contact</a></li>
             </>
           )}
-          {(isPortalPage || isAdminPage) && (
+          {(isPortalPage || isAdminPage || isInvestorPage) && (
             <li><Link to="/" onClick={() => setMobileMenuOpen(false)}>Home</Link></li>
           )}
           {user ? (
             <>
               {!isPortalPage && (
                 <li><Link to="/portal" onClick={() => setMobileMenuOpen(false)}>My Portal</Link></li>
+              )}
+              {isInvestor && !isInvestorPage && (
+                <li><Link to="/investor" onClick={() => setMobileMenuOpen(false)}>Investor Portal</Link></li>
               )}
               {isAdmin && !isAdminPage && (
                 <li><Link to="/admin" onClick={() => setMobileMenuOpen(false)}>Admin</Link></li>
@@ -64,7 +68,7 @@ export function Header() {
           aria-label="Toggle mobile menu"
           aria-expanded={mobileMenuOpen}
         >
-          {mobileMenuOpen ? '✕' : '☰'}
+          {mobileMenuOpen ? '\u2715' : '\u2630'}
         </button>
       </nav>
     </header>

@@ -7,7 +7,9 @@ import {
   ForgotPasswordPage,
   ResetPasswordPage,
   PortalPage,
-  AdminPage
+  AdminPage,
+  InvestorPage,
+  InvestorSubscribePage
 } from './pages'
 import './App.css'
 
@@ -35,6 +37,22 @@ function App() {
           element={
             <ProtectedRoute requireAdmin>
               <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/investor/subscribe"
+          element={
+            <ProtectedRoute>
+              <InvestorSubscribePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/investor/*"
+          element={
+            <ProtectedRoute requireInvestor>
+              <InvestorPage />
             </ProtectedRoute>
           }
         />

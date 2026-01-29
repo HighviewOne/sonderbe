@@ -4,7 +4,11 @@ import {
   ClientList,
   ClientDetail,
   SubmissionsList,
-  DocumentsReview
+  DocumentsReview,
+  PropertyManager,
+  PropertyForm,
+  CsvUpload,
+  InvestorList
 } from '../components/admin'
 
 export function AdminPage() {
@@ -24,6 +28,12 @@ export function AdminPage() {
           <NavLink to="/admin/documents" className={({ isActive }) => isActive ? 'active' : ''}>
             Documents
           </NavLink>
+          <NavLink to="/admin/properties" className={({ isActive }) => isActive ? 'active' : ''}>
+            Properties
+          </NavLink>
+          <NavLink to="/admin/investors" className={({ isActive }) => isActive ? 'active' : ''}>
+            Investors
+          </NavLink>
         </nav>
 
         <div className="admin-content">
@@ -33,6 +43,11 @@ export function AdminPage() {
             <Route path="clients/:clientId" element={<ClientDetail />} />
             <Route path="submissions" element={<SubmissionsList />} />
             <Route path="documents" element={<DocumentsReview />} />
+            <Route path="properties" element={<PropertyManager />} />
+            <Route path="properties/new" element={<PropertyForm />} />
+            <Route path="properties/:id/edit" element={<PropertyForm />} />
+            <Route path="properties/csv" element={<CsvUpload />} />
+            <Route path="investors" element={<InvestorList />} />
           </Routes>
         </div>
       </div>

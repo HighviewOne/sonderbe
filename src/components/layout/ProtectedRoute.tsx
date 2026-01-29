@@ -4,10 +4,11 @@ import { useAuth } from '../../hooks/useAuth'
 interface ProtectedRouteProps {
   children: React.ReactNode
   requireAdmin?: boolean
+  requireInvestor?: boolean
 }
 
-export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
-  const { user, loading, isAdmin } = useAuth()
+export function ProtectedRoute({ children, requireAdmin = false, requireInvestor = false }: ProtectedRouteProps) {
+  const { user, loading, isAdmin, isInvestor } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -25,6 +26,10 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
 
   if (requireAdmin && !isAdmin) {
     return <Navigate to="/portal" replace />
+  }
+
+  if (requireInvestor && !isInvestor) {
+    return <Navigate to="/investor/subscribe" replace />
   }
 
   return <>{children}</>

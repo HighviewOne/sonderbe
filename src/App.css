@@ -1907,4 +1907,363 @@
     width: 100%;
     justify-content: space-between;
   }
+
+  .investor-nav {
+    flex-wrap: wrap;
+  }
+
+  .investor-nav a {
+    flex: 1;
+    text-align: center;
+    min-width: 100px;
+  }
+
+  .investor-content {
+    padding: 20px;
+  }
+
+  .filter-row {
+    flex-direction: column;
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+
+  .property-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .property-admin-controls {
+    flex-direction: column;
+  }
+}
+
+/* ============================================
+   INVESTOR PORTAL
+   ============================================ */
+
+.investor-page {
+  padding-top: 80px;
+  min-height: calc(100vh - 200px);
+  background: var(--color-background);
+}
+
+.investor-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.investor-nav {
+  display: flex;
+  gap: 8px;
+  background: var(--color-white);
+  padding: 8px;
+  border-radius: var(--radius-md);
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.investor-nav a {
+  padding: 12px 24px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-weight: 500;
+  transition: all var(--transition);
+}
+
+.investor-nav a:hover {
+  background: var(--color-background);
+}
+
+.investor-nav a.active {
+  background: var(--color-secondary);
+  color: var(--color-white);
+}
+
+.investor-content {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Property Filters */
+.property-filters {
+  margin-bottom: 24px;
+}
+
+.filter-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-search .search-input {
+  flex: 1;
+}
+
+.filter-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.filter-group label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-light);
+}
+
+.filter-group select,
+.filter-group input {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+}
+
+.filter-group select:focus,
+.filter-group input:focus {
+  outline: none;
+  border-color: var(--color-secondary);
+}
+
+/* Property Table */
+.property-table-wrapper {
+  margin-top: 16px;
+}
+
+.results-count {
+  font-size: 0.9rem;
+  color: var(--color-text-light);
+  margin-bottom: 12px;
+}
+
+.property-table td,
+.property-table th {
+  font-size: 0.9rem;
+}
+
+/* Lead Type Badges */
+.lead-type-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.lead-type-foreclosure_nod { background: #fef3c7; color: #92400e; }
+.lead-type-foreclosure_not { background: #fee2e2; color: #b91c1c; }
+.lead-type-probate { background: #e0e7ff; color: #3730a3; }
+.lead-type-tax_lien { background: #d1fae5; color: #065f46; }
+.lead-type-tax_sale { background: #fce7f3; color: #9d174d; }
+
+/* Property Status */
+.status-active { background: #d1fae5; color: #065f46; }
+.status-sold { background: #dbeafe; color: #1e40af; }
+.status-redeemed { background: #fef3c7; color: #92400e; }
+.status-expired { background: #f3f4f6; color: #6b7280; }
+.status-removed { background: #fee2e2; color: #b91c1c; }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.page-info {
+  font-size: 0.9rem;
+  color: var(--color-text-light);
+}
+
+/* Property Detail */
+.property-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.property-detail-header h1 {
+  margin: 0;
+}
+
+.property-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.detail-section {
+  background: var(--color-background);
+  border-radius: var(--radius-md);
+  padding: 24px;
+}
+
+.detail-section h2 {
+  font-size: 1.1rem;
+  margin-bottom: 16px;
+  color: var(--color-primary);
+}
+
+.equity-value {
+  font-weight: 700;
+  color: var(--color-secondary);
+  font-size: 1.1rem;
+}
+
+/* Subscription */
+.subscription-card {
+  background: var(--color-background);
+  border-radius: var(--radius-md);
+  padding: 32px;
+}
+
+.subscription-details {
+  display: flex;
+  gap: 32px;
+  margin: 16px 0 24px;
+}
+
+/* Subscribe Page */
+.subscribe-container {
+  max-width: 500px;
+  width: 100%;
+}
+
+.subscribe-card {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: 40px;
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.subscribe-card h1 {
+  color: var(--color-primary);
+  margin-bottom: 8px;
+}
+
+.subscribe-subtitle {
+  color: var(--color-text-light);
+  margin-bottom: 32px;
+}
+
+.subscribe-features {
+  text-align: left;
+  margin-bottom: 32px;
+}
+
+.subscribe-features h3 {
+  font-size: 1rem;
+  margin-bottom: 12px;
+}
+
+.subscribe-features ul {
+  list-style: none;
+  padding: 0;
+}
+
+.subscribe-features li {
+  padding: 6px 0 6px 24px;
+  position: relative;
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.subscribe-features li::before {
+  content: '\2713';
+  position: absolute;
+  left: 0;
+  color: var(--color-secondary);
+  font-weight: bold;
+}
+
+.subscribe-note {
+  margin-top: 16px;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+}
+
+/* Admin Property Controls */
+.property-admin-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+/* Property Form */
+.property-form {
+  max-width: 900px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+.btn-danger {
+  background: #fee2e2;
+  border: 1px solid #b91c1c;
+  color: #b91c1c;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.btn-danger:hover {
+  background: #fecaca;
+}
+
+/* CSV Upload */
+.csv-result-summary {
+  background: #d1fae5;
+  border: 1px solid #065f46;
+  color: #065f46;
+  padding: 16px 20px;
+  border-radius: var(--radius-md);
+}
+
+.csv-result-summary.has-errors {
+  background: #fef3c7;
+  border-color: #92400e;
+  color: #92400e;
+}
+
+.csv-errors {
+  margin-top: 16px;
+  padding: 16px;
+  background: #fef2f2;
+  border-radius: var(--radius-md);
+}
+
+.csv-errors ul {
+  padding-left: 20px;
+  font-size: 0.9rem;
+  color: #b91c1c;
 }
