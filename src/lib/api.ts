@@ -4,6 +4,7 @@ const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession()
+  console.log('[API] getSession result:', session ? 'has session' : 'NO SESSION', 'BASE_URL:', BASE_URL)
   if (session?.access_token) {
     return { Authorization: `Bearer ${session.access_token}` }
   }
