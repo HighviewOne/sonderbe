@@ -11,25 +11,30 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
 
   const token = authHeader.slice(7)
 
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  if (error || !user) {
-    res.status(401).json({ error: 'Invalid or expired token' })
-    return
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
+    if (error || !user) {
+      res.status(401).json({ error: 'Invalid or expired token' })
+      return
+    }
+
+    // Fetch profile to get role
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    req.userId = user.id
+    req.userRole = profile?.role ?? 'client'
+    next()
+  } catch (err) {
+    console.error('Auth middleware error:', err)
+    res.status(401).json({ error: 'Authentication failed' })
   }
-
-  // Fetch profile to get role
-  const { data: profile } = await supabaseAdmin
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  req.userId = user.id
-  req.userRole = profile?.role ?? 'client'
-  next()
 }
 
-export function optionalAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export async function optionalAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization
   if (!authHeader?.startsWith('Bearer ')) {
     next()
@@ -38,23 +43,20 @@ export function optionalAuth(req: AuthenticatedRequest, res: Response, next: Nex
 
   const token = authHeader.slice(7)
 
-  supabaseAdmin.auth.getUser(token).then(({ data: { user } }) => {
+  try {
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token)
     if (user) {
       req.userId = user.id
-      // Fetch role
-      supabaseAdmin
+      const { data: profile } = await supabaseAdmin
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
-        .then(({ data: profile }) => {
-          req.userRole = profile?.role ?? 'client'
-          next()
-        })
-    } else {
-      next()
+      req.userRole = profile?.role ?? 'client'
     }
-  }).catch(() => {
-    next()
-  })
+  } catch {
+    // Auth is optional — ignore errors
+  }
+
+  next()
 }

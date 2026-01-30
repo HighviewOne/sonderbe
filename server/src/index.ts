@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -16,7 +17,12 @@ import stripeRoutes from './routes/stripe.js'
 const app = express()
 const PORT = process.env.PORT || 3001
 
-app.use(cors())
+app.use(helmet())
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true
+}))
 
 // Stripe webhook needs raw body — register before express.json()
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res, next) => {
@@ -24,7 +30,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req,
   next()
 })
 
-app.use(express.json())
+app.use(express.json({ limit: '1mb' }))
 
 app.use('/api/profile', profileRoutes)
 app.use('/api/checklist', checklistRoutes)

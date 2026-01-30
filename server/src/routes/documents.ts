@@ -3,6 +3,7 @@ import multer from 'multer'
 import { supabaseAdmin } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
 import { adminOnly } from '../middleware/adminOnly.js'
+import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 
 const router = Router()
@@ -11,8 +12,30 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 })
 
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
+  'text/plain'
+])
+
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/\\/g, '')
+    .replace(/\//g, '')
+    .replace(/\.\./g, '')
+    .replace(/\0/g, '')
+}
+
 // GET /api/documents — own documents
-router.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const { data, error } = await supabaseAdmin
     .from('documents')
     .select('*')
@@ -20,21 +43,28 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
     .order('created_at', { ascending: false })
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to fetch documents:', error)
+    res.status(500).json({ error: 'Failed to fetch documents' })
     return
   }
   res.json(data)
-})
+}))
 
 // POST /api/documents/upload — upload file
-router.post('/upload', requireAuth, upload.single('file'), async (req: AuthenticatedRequest, res) => {
+router.post('/upload', requireAuth, upload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'No file provided' })
     return
   }
 
+  if (!ALLOWED_MIME_TYPES.has(req.file.mimetype)) {
+    res.status(400).json({ error: 'File type not allowed' })
+    return
+  }
+
   const category = req.body.category || null
-  const fileName = `${req.userId}/${Date.now()}-${req.file.originalname}`
+  const sanitized = sanitizeFilename(req.file.originalname)
+  const fileName = `${req.userId}/${Date.now()}-${sanitized}`
 
   const { error: uploadError } = await supabaseAdmin.storage
     .from('client-documents')
@@ -43,6 +73,7 @@ router.post('/upload', requireAuth, upload.single('file'), async (req: Authentic
     })
 
   if (uploadError) {
+    console.error('Storage upload failed:', uploadError)
     res.status(500).json({ error: 'Failed to upload file' })
     return
   }
@@ -51,7 +82,7 @@ router.post('/upload', requireAuth, upload.single('file'), async (req: Authentic
     .from('documents')
     .insert({
       user_id: req.userId!,
-      file_name: req.file.originalname,
+      file_name: sanitized,
       file_path: fileName,
       file_size: req.file.size,
       mime_type: req.file.mimetype,
@@ -62,14 +93,15 @@ router.post('/upload', requireAuth, upload.single('file'), async (req: Authentic
     .single()
 
   if (docError) {
+    console.error('Document metadata save failed:', docError)
     res.status(500).json({ error: 'Failed to save document metadata' })
     return
   }
   res.status(201).json(docData)
-})
+}))
 
 // DELETE /api/documents/:id — delete own document
-router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete('/:id', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   // Fetch the document first to verify ownership and get file_path
   const { data: doc, error: fetchError } = await supabaseAdmin
     .from('documents')
@@ -96,14 +128,15 @@ router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
     .eq('user_id', req.userId!)
 
   if (deleteError) {
+    console.error('Document delete failed:', deleteError)
     res.status(500).json({ error: 'Failed to delete document' })
     return
   }
   res.json({ success: true })
-})
+}))
 
 // GET /api/documents/:id/download — signed download URL
-router.get('/:id/download', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/:id/download', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   // Fetch document — allow own documents or admin
   let query = supabaseAdmin
     .from('documents')
@@ -126,15 +159,16 @@ router.get('/:id/download', requireAuth, async (req: AuthenticatedRequest, res) 
     .createSignedUrl(doc.file_path, 3600)
 
   if (urlError || !urlData) {
+    console.error('Signed URL generation failed:', urlError)
     res.status(500).json({ error: 'Failed to generate download URL' })
     return
   }
 
   res.json({ url: urlData.signedUrl })
-})
+}))
 
 // GET /api/documents/user/:userId — client's documents (admin only)
-router.get('/user/:userId', requireAuth, adminOnly, async (req, res) => {
+router.get('/user/:userId', requireAuth, adminOnly, asyncHandler(async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('documents')
     .select('*')
@@ -142,14 +176,15 @@ router.get('/user/:userId', requireAuth, adminOnly, async (req, res) => {
     .order('created_at', { ascending: false })
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to fetch user documents:', error)
+    res.status(500).json({ error: 'Failed to fetch documents' })
     return
   }
   res.json(data)
-})
+}))
 
 // PATCH /api/documents/:id — update status/notes (admin only)
-router.patch('/:id', requireAuth, adminOnly, async (req, res) => {
+router.patch('/:id', requireAuth, adminOnly, asyncHandler(async (req, res) => {
   const { status, admin_notes } = req.body
 
   const updateData: Record<string, unknown> = {
@@ -166,10 +201,11 @@ router.patch('/:id', requireAuth, adminOnly, async (req, res) => {
     .single()
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Document update failed:', error)
+    res.status(500).json({ error: 'Failed to update document' })
     return
   }
   res.json(data)
-})
+}))
 
 export default router

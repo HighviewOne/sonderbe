@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { supabaseAdmin } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
 import { adminOnly } from '../middleware/adminOnly.js'
+import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest, Profile, ContactSubmission, Document, DistressedProperty, County, LeadType } from '../types.js'
 import multer from 'multer'
 import { parse } from 'csv-parse/sync'
@@ -11,8 +12,31 @@ const router = Router()
 // All admin routes require auth + admin role
 router.use(requireAuth, adminOnly)
 
+const ALLOWED_SORT_COLUMNS = new Set([
+  'created_at', 'updated_at', 'property_address', 'city', 'zip',
+  'county', 'lead_type', 'estimated_value', 'estimated_equity',
+  'outstanding_debt', 'opening_bid', 'recording_date', 'sale_date', 'status'
+])
+
+const PROPERTY_FIELDS = [
+  'lead_type', 'county', 'property_address', 'city', 'zip', 'apn',
+  'owner_name', 'owner_mailing_address', 'estimated_value', 'outstanding_debt',
+  'estimated_equity', 'opening_bid', 'recording_date', 'document_number',
+  'case_number', 'sale_date', 'notes', 'source', 'status'
+] as const
+
+function pickPropertyFields(body: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const field of PROPERTY_FIELDS) {
+    if (body[field] !== undefined) {
+      result[field] = body[field]
+    }
+  }
+  return result
+}
+
 // GET /api/admin/stats — dashboard counts + recent data
-router.get('/stats', async (_req, res) => {
+router.get('/stats', asyncHandler(async (_req, res) => {
   const [clientsResult, submissionsResult, documentsResult] = await Promise.all([
     supabaseAdmin
       .from('profiles')
@@ -41,10 +65,10 @@ router.get('/stats', async (_req, res) => {
     recentClients: clients.slice(0, 5),
     recentSubmissions: submissions.slice(0, 5)
   })
-})
+}))
 
 // GET /api/admin/clients — all client profiles
-router.get('/clients', async (_req, res) => {
+router.get('/clients', asyncHandler(async (_req, res) => {
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .select('*')
@@ -52,14 +76,15 @@ router.get('/clients', async (_req, res) => {
     .order('created_at', { ascending: false })
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to fetch clients:', error)
+    res.status(500).json({ error: 'Failed to fetch clients' })
     return
   }
   res.json(data)
-})
+}))
 
 // GET /api/admin/clients/:id — full client detail
-router.get('/clients/:id', async (req, res) => {
+router.get('/clients/:id', asyncHandler(async (req, res) => {
   const clientId = req.params.id
 
   const [profileResult, submissionsResult, documentsResult, checklistResult] = await Promise.all([
@@ -80,17 +105,18 @@ router.get('/clients/:id', async (req, res) => {
     documents: documentsResult.data || [],
     checklist: checklistResult.data || []
   })
-})
+}))
 
 // GET /api/admin/documents — all documents with client names
-router.get('/documents', async (_req, res) => {
+router.get('/documents', asyncHandler(async (_req, res) => {
   const { data: docs, error: docsError } = await supabaseAdmin
     .from('documents')
     .select('*')
     .order('created_at', { ascending: false })
 
   if (docsError) {
-    res.status(500).json({ error: docsError.message })
+    console.error('Failed to fetch documents:', docsError)
+    res.status(500).json({ error: 'Failed to fetch documents' })
     return
   }
 
@@ -110,7 +136,7 @@ router.get('/documents', async (_req, res) => {
   }))
 
   res.json(docsWithClients)
-})
+}))
 
 // ============================================
 // PROPERTY MANAGEMENT
@@ -122,9 +148,9 @@ const VALID_COUNTIES: County[] = ['Los Angeles', 'Orange', 'Riverside', 'San Ber
 const VALID_LEAD_TYPES: LeadType[] = ['foreclosure_nod', 'foreclosure_not', 'probate', 'tax_lien', 'tax_sale']
 
 // GET /api/admin/properties — list with pagination/filters
-router.get('/properties', async (req, res) => {
-  const page = parseInt(req.query.page as string) || 1
-  const limit = Math.min(parseInt(req.query.limit as string) || 25, 100)
+router.get('/properties', asyncHandler(async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page as string) || 1)
+  const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 25), 100)
   const offset = (page - 1) * limit
 
   let query = supabaseAdmin.from('distressed_properties').select('*', { count: 'exact' })
@@ -139,6 +165,10 @@ router.get('/properties', async (req, res) => {
   }
 
   const sortBy = (req.query.sort_by as string) || 'created_at'
+  if (!ALLOWED_SORT_COLUMNS.has(sortBy)) {
+    res.status(400).json({ error: 'Invalid sort column' })
+    return
+  }
   const sortOrder = req.query.sort_order === 'asc'
 
   query = query.order(sortBy, { ascending: sortOrder }).range(offset, offset + limit - 1)
@@ -146,7 +176,8 @@ router.get('/properties', async (req, res) => {
   const { data, error, count } = await query
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to fetch properties:', error)
+    res.status(500).json({ error: 'Failed to fetch properties' })
     return
   }
 
@@ -157,18 +188,18 @@ router.get('/properties', async (req, res) => {
     limit,
     totalPages: Math.ceil((count || 0) / limit)
   })
-})
+}))
 
 // POST /api/admin/properties — create single property
-router.post('/properties', async (req: AuthenticatedRequest, res) => {
-  const property = req.body
+router.post('/properties', asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const property = pickPropertyFields(req.body)
   property.uploaded_by = req.userId
 
-  if (!property.lead_type || !VALID_LEAD_TYPES.includes(property.lead_type)) {
+  if (!property.lead_type || !VALID_LEAD_TYPES.includes(property.lead_type as LeadType)) {
     res.status(400).json({ error: 'Invalid or missing lead_type' })
     return
   }
-  if (!property.county || !VALID_COUNTIES.includes(property.county)) {
+  if (!property.county || !VALID_COUNTIES.includes(property.county as County)) {
     res.status(400).json({ error: 'Invalid or missing county' })
     return
   }
@@ -180,19 +211,19 @@ router.post('/properties', async (req: AuthenticatedRequest, res) => {
     .single()
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to create property:', error)
+    res.status(500).json({ error: 'Failed to create property' })
     return
   }
 
   res.status(201).json(data)
-})
+}))
 
 // PUT /api/admin/properties/:id — update property
-router.put('/properties/:id', async (req, res) => {
+router.put('/properties/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
-  const updates = { ...req.body, updated_at: new Date().toISOString() }
-  delete updates.id
-  delete updates.created_at
+  const updates = pickPropertyFields(req.body)
+  updates.updated_at = new Date().toISOString()
 
   const { data, error } = await supabaseAdmin
     .from('distressed_properties')
@@ -202,15 +233,16 @@ router.put('/properties/:id', async (req, res) => {
     .single()
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to update property:', error)
+    res.status(500).json({ error: 'Failed to update property' })
     return
   }
 
   res.json(data)
-})
+}))
 
 // DELETE /api/admin/properties/:id
-router.delete('/properties/:id', async (req, res) => {
+router.delete('/properties/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
 
   const { error } = await supabaseAdmin
@@ -219,15 +251,16 @@ router.delete('/properties/:id', async (req, res) => {
     .eq('id', id)
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to delete property:', error)
+    res.status(500).json({ error: 'Failed to delete property' })
     return
   }
 
   res.json({ success: true })
-})
+}))
 
 // POST /api/admin/properties/csv-upload — bulk import from CSV
-router.post('/properties/csv-upload', csvUpload.single('file'), async (req: AuthenticatedRequest, res) => {
+router.post('/properties/csv-upload', csvUpload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'No file uploaded' })
     return
@@ -306,7 +339,8 @@ router.post('/properties/csv-upload', csvUpload.single('file'), async (req: Auth
       .select('id')
 
     if (insertError) {
-      res.status(500).json({ error: insertError.message })
+      console.error('CSV property insert failed:', insertError)
+      res.status(500).json({ error: 'Failed to insert properties' })
       return
     }
     insertedCount = insertedData?.length || properties.length
@@ -329,10 +363,10 @@ router.post('/properties/csv-upload', csvUpload.single('file'), async (req: Auth
     errorDetails: errors,
     total: records.length
   })
-})
+}))
 
 // GET /api/admin/investors — list investors with subscription status
-router.get('/investors', async (_req, res) => {
+router.get('/investors', asyncHandler(async (_req, res) => {
   const { data: investors, error } = await supabaseAdmin
     .from('profiles')
     .select('*')
@@ -340,7 +374,8 @@ router.get('/investors', async (_req, res) => {
     .order('created_at', { ascending: false })
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to fetch investors:', error)
+    res.status(500).json({ error: 'Failed to fetch investors' })
     return
   }
 
@@ -362,10 +397,10 @@ router.get('/investors', async (_req, res) => {
   }))
 
   res.json(result)
-})
+}))
 
 // GET /api/admin/csv-uploads — upload history
-router.get('/csv-uploads', async (_req, res) => {
+router.get('/csv-uploads', asyncHandler(async (_req, res) => {
   const { data, error } = await supabaseAdmin
     .from('csv_uploads')
     .select('*')
@@ -373,11 +408,12 @@ router.get('/csv-uploads', async (_req, res) => {
     .limit(50)
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Failed to fetch CSV uploads:', error)
+    res.status(500).json({ error: 'Failed to fetch upload history' })
     return
   }
 
   res.json(data)
-})
+}))
 
 export default router

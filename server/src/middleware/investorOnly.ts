@@ -8,17 +8,22 @@ export async function investorOnly(req: AuthenticatedRequest, res: Response, nex
     return
   }
 
-  // Check for active subscription
-  const { data: subscription } = await supabaseAdmin
-    .from('investor_subscriptions')
-    .select('status')
-    .eq('user_id', req.userId!)
-    .single()
+  try {
+    // Check for active subscription
+    const { data: subscription } = await supabaseAdmin
+      .from('investor_subscriptions')
+      .select('status')
+      .eq('user_id', req.userId!)
+      .single()
 
-  if (!subscription || (subscription.status !== 'active' && subscription.status !== 'trialing')) {
-    res.status(403).json({ error: 'Active subscription required' })
-    return
+    if (!subscription || (subscription.status !== 'active' && subscription.status !== 'trialing')) {
+      res.status(403).json({ error: 'Active subscription required' })
+      return
+    }
+
+    next()
+  } catch (err) {
+    console.error('Investor check error:', err)
+    res.status(500).json({ error: 'Failed to verify subscription' })
   }
-
-  next()
 }
