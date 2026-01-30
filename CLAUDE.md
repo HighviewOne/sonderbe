@@ -121,5 +121,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 - `pg` package added to `server/package.json`, Pool exported from config
 - `DATABASE_URL` uses the session mode pooler (`aws-1-us-east-1.pooler.supabase.com:5432`)
 - **Unknown**: the original purpose/task for adding direct `pg` access was lost due to a restart. The Pool is set up and connected but not yet used by any routes. The user does not recall the original intent. Next step: decide what to use it for or remove it if unnecessary.
-- **Fixed**: `supabase.auth.getSession()` was hanging/deadlocking with `onAuthStateChange` in AuthContext — replaced with `onAuthStateChange`-only initialization (Supabase v2 fires `INITIAL_SESSION` event automatically)
-- **Investigating**: Portal dashboard data (checklist, documents, submissions) stuck on "Loading..." — auth works (user name shows), manual API calls with token succeed (200), but hooks' `apiGet` calls may not be firing or are failing silently. Likely the `getSession()` call inside `api.ts`'s `getAuthHeaders()` is also hanging.
+- **Fixed**: `supabase.auth.getSession()` deadlocks in Supabase v2 when used alongside `onAuthStateChange`. Two fixes applied:
+  - `AuthContext.tsx`: replaced `getSession()` + `onAuthStateChange` with `onAuthStateChange`-only initialization (Supabase v2 fires `INITIAL_SESSION` event automatically)
+  - `api.ts`: replaced `getAuthHeaders()` calling `supabase.auth.getSession()` with direct `localStorage` read of the Supabase auth token (key: `sb-<project-ref>-auth-token`). No longer imports `supabase` client.
+- **Deployment verified**: Frontend (Vercel) + Backend (Render) fully working end-to-end — auth, portal dashboard, API calls all functional
