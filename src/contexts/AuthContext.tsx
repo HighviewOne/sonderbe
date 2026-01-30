@@ -37,12 +37,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    console.log('[AUTH] Starting getSession...')
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[AUTH] getSession resolved:', session ? 'has session' : 'NO SESSION')
       setSession(session)
       setUser(session?.user ?? null)
       if (session?.user) {
-        fetchProfile(session.user.id).then(setProfile)
+        console.log('[AUTH] Fetching profile...')
+        fetchProfile(session.user.id).then((p) => {
+          console.log('[AUTH] Profile fetched:', p ? 'success' : 'failed')
+          setProfile(p)
+        })
       }
+      setLoading(false)
+      console.log('[AUTH] loading set to false')
+    }).catch((err) => {
+      console.error('[AUTH] getSession error:', err)
       setLoading(false)
     })
 
