@@ -102,14 +102,18 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 ## Deployment
 
-- **Frontend**: Vercel — auto-deploys from `master` branch
-  - Env var `VITE_API_URL` = `https://sonderbe.onrender.com/api`
+- **Frontend**: Vercel — auto-deploys from `master` branch, repo `HighviewOne/sonderbe`
+  - Env vars: `VITE_API_URL` = `https://sonderbe.onrender.com/api`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+  - Note: `VITE_` env vars are baked in at build time — must redeploy after changing them
+  - Vercel project was recreated (old one was connected to wrong repo); domain `sonderbe.vercel.app` reassigned
 - **Backend**: Render Web Service — `https://sonderbe.onrender.com`
   - Repo: `HighviewOne/sonderbe`, root directory: `server`
-  - Build: `npm install --include=dev && npm run build`, Start: `npm start`
-  - Env vars: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
-  - CORS configured via `FRONTEND_URL` env var (set to Vercel URL)
+  - Build: `npm install --include=dev && npm run build` (must include dev deps for TypeScript/@types), Start: `npm start`
+  - Env vars: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL=https://sonderbe.vercel.app`
+  - CORS configured via `FRONTEND_URL` env var
+  - Render uses port from `PORT` env var (auto-assigned, currently 10000)
 - **Stripe webhook**: `https://sonderbe.onrender.com/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
+  - Signing secret stored as `STRIPE_WEBHOOK_SECRET` in Render env vars
 
 ## In Progress
 
