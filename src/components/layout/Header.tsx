@@ -35,33 +35,31 @@ export function Header() {
           {(isPortalPage || isAdminPage || isInvestorPage) && (
             <li><Link to="/" onClick={() => setMobileMenuOpen(false)}>Home</Link></li>
           )}
+        </ul>
+        <div className={`nav-auth ${mobileMenuOpen ? 'active' : ''}`}>
           {user ? (
             <>
               {!isPortalPage && (
-                <li><Link to="/portal" onClick={() => setMobileMenuOpen(false)}>My Portal</Link></li>
+                <Link to="/portal" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>My Portal</Link>
               )}
               {isInvestor && !isInvestorPage && (
-                <li><Link to="/investor" onClick={() => setMobileMenuOpen(false)}>Investor Portal</Link></li>
+                <Link to="/investor" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>Investor Portal</Link>
               )}
               {isAdmin && !isAdminPage && (
-                <li><Link to="/admin" onClick={() => setMobileMenuOpen(false)}>Admin</Link></li>
+                <Link to="/admin" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>Admin</Link>
               )}
-              <li className="nav-user-info">
-                <span className="user-name">{profile?.full_name || user.email}</span>
-              </li>
-              <li>
-                <button onClick={handleSignOut} className="nav-link-button">
-                  Sign Out
-                </button>
-              </li>
+              <span className="user-name">{profile?.full_name || user.email}</span>
+              <button onClick={handleSignOut} className="nav-link-button">
+                Sign Out
+              </button>
             </>
           ) : (
             <>
-              <li><Link to="/login" onClick={() => setMobileMenuOpen(false)}>Login</Link></li>
-              <li><Link to="/signup" className="btn btn-primary btn-small" onClick={() => setMobileMenuOpen(false)}>Sign Up</Link></li>
+              <Link to="/login" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>Login</Link>
+              <Link to="/signup" className="btn btn-primary btn-small" onClick={() => setMobileMenuOpen(false)}>Sign Up</Link>
             </>
           )}
-        </ul>
+        </div>
         <button
           className="mobile-menu-btn"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

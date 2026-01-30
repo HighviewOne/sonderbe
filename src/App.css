@@ -43,6 +43,22 @@
   color: var(--color-secondary);
 }
 
+.nav-auth {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nav-auth-link {
+  color: var(--color-text);
+  font-weight: 500;
+  transition: color var(--transition);
+}
+
+.nav-auth-link:hover {
+  color: var(--color-secondary);
+}
+
 .mobile-menu-btn {
   display: none;
   background: none;
@@ -577,6 +593,23 @@
   }
 
   .nav-links.active {
+    display: flex;
+  }
+
+  .nav-auth {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--color-white);
+    flex-direction: column;
+    padding: 0 20px 20px;
+    gap: 16px;
+    box-shadow: var(--shadow-md);
+  }
+
+  .nav-auth.active {
     display: flex;
   }
 
