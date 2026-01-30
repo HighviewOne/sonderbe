@@ -3,7 +3,7 @@
 ## Architecture
 
 React 19 frontend + Express/TypeScript backend (`server/`) + Supabase (PostgreSQL, Auth, Storage).
-Routing: React Router v6 with HashRouter. Hosted on Vercel (frontend).
+Routing: React Router v6 with HashRouter. Hosted on Vercel (frontend) and Render (backend).
 
 Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabase SDK. All data operations (CRUD on profiles, checklist, submissions, documents, file storage) go through the **Express backend**.
 
@@ -99,6 +99,17 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 - `.env.local` — frontend Supabase URL + anon key (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
 - `server/.env` — backend Supabase URL + service role key + DATABASE_URL + PORT + Stripe keys (gitignored)
+
+## Deployment
+
+- **Frontend**: Vercel — auto-deploys from `master` branch
+  - Env var `VITE_API_URL` points to the Render backend (e.g. `https://<render-url>/api`)
+- **Backend**: Render Web Service
+  - Repo: `HighviewOne/sonderbe`, root directory: `server`
+  - Build: `npm install && npm run build`, Start: `npm start`
+  - Env vars: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
+  - CORS configured via `FRONTEND_URL` env var (set to Vercel URL)
+- **Stripe webhook**: registered at `https://<render-url>/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
 
 ## In Progress
 
