@@ -102,6 +102,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 - `.env.local` — frontend Supabase URL + anon key (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
 - `server/.env` — backend Supabase URL + service role key + PORT + Stripe keys (gitignored)
+- Templates (committed): `.env.example` (frontend, incl. optional `VITE_API_URL`) and `server/.env.example` (commented, matches every `process.env.*` the server reads). Keep them in sync when adding env vars.
 
 ## Deployment
 
@@ -124,7 +125,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 - **Stripe checkout bug found and fixed in `server/.env`**: `STRIPE_PRICE_ID` was set to a product ID (`prod_Tsu6EoAt319qUL`) instead of a price ID — Stripe checkout rejects product IDs, so every checkout failed. Corrected to `price_1Sv8I9Hdn9u1Gfdher0BRAId` ($0/month test price on that product). The same wrong value is likely still in Render's `STRIPE_PRICE_ID` env var — fix there too.
 - Render backend (`sonderbe.onrender.com`) and Vercel frontend both still deployed and responding (Render free tier cold-starts ~20s).
 - Frontend typecheck and server build both pass.
-- **Branch `hardening-and-review-fixes` (2026-09-24, local, not pushed/merged)** holds all post-January work: `95e56a1` security/robustness hardening (in-memory token store via `src/lib/tokenStore.ts`, role caching, rate limiting, field whitelists, hash-router reset-password redirect) + review fixes; `ea03997` CI, lint cleanup, dependency updates. `master` (last commit Jan 30) is what's deployed — merging auto-deploys both Vercel and Render, so merge after the Supabase rebuild and test together.
+- **Branch `hardening-and-review-fixes` (2026-09-24, local, not pushed/merged)** holds all post-January work: `95e56a1` security/robustness hardening (in-memory token store via `src/lib/tokenStore.ts`, role caching, rate limiting, field whitelists, hash-router reset-password redirect) + review fixes; `ea03997` CI, lint cleanup, dependency updates; then `pg` removal and docs/env-example commits. `master` (last commit Jan 30) is what's deployed — merging auto-deploys both Vercel and Render, so merge after the Supabase rebuild and test together.
 - **Code review 2026-09-24** of that batch found 10 issues; 8 fixed (committed on the branch above): Stripe webhook raw-body regression, rate limiters keyed on Render proxy IP, stale role cache after checkout, AuthContext 5s timeout rendering user-without-profile during Render cold starts, eager Stripe init crashing server, admin client detail 404 for investors, PropertyForm edit loading blank (UUID sent as `search`) and able to overwrite data, signOut not clearing state on error.
   - Still open: (7) reset-password redirect `/#/reset-password` may collide with Supabase's implicit-flow `#access_token` fragment — test with a real reset email once Supabase is rebuilt; (10) `investor.ts` /stats only checks the total count's error, per-type count failures silently show 0.
 - **CI** (`.github/workflows/ci.yml`, added 2026-09-24): on PRs and pushes to master runs `npm run lint` (root ESLint config covers `src/` and `server/src/`), frontend build (`tsc -b && vite build`), server build. Lint was cleaned to zero errors.
