@@ -21,7 +21,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads
   - `/api/investor` — GET /properties (search/filter/paginate), /properties/:id, /stats, /subscription
   - `/api/stripe` — POST /create-checkout, /webhook (raw body), /portal
-- Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, express-rate-limit (`pg` is still listed in package.json but no longer imported — safe to remove)
+- Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, express-rate-limit
 - Dev: tsx (watch mode), typescript
 - Stripe webhook: `app.use('/api/stripe/webhook', express.raw(...))` in `index.ts` BEFORE `express.json()` — a router-level `express.raw()` alone does NOT work (json parses first, raw skips, signature check fails). Verified with a signed test event 2026-09-24
 - Stripe client created lazily via `getStripe()` so a missing `STRIPE_SECRET_KEY` only breaks Stripe routes, not server startup
@@ -130,7 +130,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 - **CI** (`.github/workflows/ci.yml`, added 2026-09-24): on PRs and pushes to master runs `npm run lint` (root ESLint config covers `src/` and `server/src/`), frontend build (`tsc -b && vite build`), server build. Lint was cleaned to zero errors.
   - ESLint uses `eslint-plugin-react-hooks` v7 compiler rules: `set-state-in-effect` flags synchronous setState in effects, including inside `async` functions/useCallbacks called from an effect. Pattern used: effects call a non-async fetch that sets state only in `.then/.finally`; initial `loading` is `true`; separate `reload`/`retry` functions do the `setLoading(true)`.
 - **Dependencies** (2026-09-24): `npm audit fix` in both packages + `csv-parse` 6→7 (server has 0 vulns). Remaining frontend moderates need majors, deliberately deferred: `react-router-dom` 6→7 (open-redirect advisory) and `vite` 8 (esbuild dev-server advisory, dev-only).
-- The `pg` Pool is gone from the code (`config.ts`); only the `pg` package.json entry remains.
+- The `pg` Pool and package are removed (2026-09-24).
 - `supabase/config.toml` exists from `supabase init` (local dev was being set up); supabase CLI is not installed, Docker is available.
 - **Fixed**: `supabase.auth.getSession()` deadlocks in Supabase v2 when used alongside `onAuthStateChange`. Two fixes applied:
   - `AuthContext.tsx`: replaced `getSession()` + `onAuthStateChange` with `onAuthStateChange`-only initialization (Supabase v2 fires `INITIAL_SESSION` event automatically). The handler clears the 5s fallback timeout as soon as any auth event fires, so `loading` stays true until the profile fetch finishes (don't let route guards see a user with a null profile during Render cold starts)
