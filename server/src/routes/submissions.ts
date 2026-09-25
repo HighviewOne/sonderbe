@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { rateLimit } from 'express-rate-limit'
 import { supabaseAdmin } from '../config.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { adminOnly } from '../middleware/adminOnly.js'
@@ -6,6 +7,14 @@ import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 
 const router = Router()
+
+const submissionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many submissions, please try again later' }
+})
 
 // GET /api/submissions — own (client) or all (admin)
 router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
@@ -29,7 +38,7 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
 }))
 
 // POST /api/submissions — create submission (auth optional)
-router.post('/', optionalAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
+router.post('/', submissionLimiter, optionalAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const { name, email, phone, situation, message } = req.body
 
   if (!name || !email || !phone || !situation) {
@@ -81,9 +90,16 @@ router.post('/', optionalAuth, asyncHandler(async (req: AuthenticatedRequest, re
   res.status(201).json(data)
 }))
 
+const VALID_SUBMISSION_STATUSES = ['new', 'in_progress', 'resolved', 'archived']
+
 // PATCH /api/submissions/:id — update status/notes (admin only)
 router.patch('/:id', requireAuth, adminOnly, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const { status, admin_notes } = req.body
+
+  if (status !== undefined && !VALID_SUBMISSION_STATUSES.includes(status)) {
+    res.status(400).json({ error: 'Invalid status' })
+    return
+  }
 
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString()

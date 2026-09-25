@@ -60,8 +60,8 @@ export function PropertyManager() {
     try {
       await apiDelete(`/admin/properties/${id}`)
       fetchProperties()
-    } catch (e: any) {
-      alert(e.message)
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Delete failed')
     }
   }
 

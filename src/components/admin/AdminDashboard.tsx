@@ -1,13 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import type { Profile, ContactSubmission } from '../../lib/supabase'
+import type { ContactSubmission } from '../../lib/supabase'
 import { apiGet } from '../../lib/api'
+
+interface RecentClient {
+  id: string
+  email: string
+  full_name: string | null
+  created_at: string
+}
 
 interface Stats {
   totalClients: number
   newSubmissions: number
   pendingDocuments: number
-  recentClients: Profile[]
+  recentClients: RecentClient[]
   recentSubmissions: ContactSubmission[]
 }
 
@@ -20,29 +27,41 @@ export function AdminDashboard() {
     recentSubmissions: []
   })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadStats()
-  }, [])
-
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     setLoading(true)
+    setError(null)
 
     try {
       const data = await apiGet<Stats>('/admin/stats')
       setStats(data)
     } catch (err) {
       console.error('Error loading stats:', err)
+      setError('Failed to load dashboard stats. Please refresh.')
+    } finally {
+      setLoading(false)
     }
+  }, [])
 
-    setLoading(false)
-  }
+  useEffect(() => {
+    loadStats()
+  }, [loadStats])
 
   if (loading) {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
         <p>Loading admin dashboard...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="admin-dashboard">
+        <div className="error-message">{error}</div>
+        <button className="btn btn-secondary" onClick={loadStats}>Retry</button>
       </div>
     )
   }

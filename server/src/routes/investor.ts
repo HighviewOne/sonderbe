@@ -41,7 +41,8 @@ router.get('/properties', asyncHandler(async (req, res) => {
   if (req.query.date_from) query = query.gte('recording_date', req.query.date_from)
   if (req.query.date_to) query = query.lte('recording_date', req.query.date_to)
   if (req.query.search) {
-    query = query.or(`property_address.ilike.%${req.query.search}%,owner_name.ilike.%${req.query.search}%,apn.ilike.%${req.query.search}%,city.ilike.%${req.query.search}%`)
+    const search = (req.query.search as string).replace(/[,%]/g, '').slice(0, 200)
+    query = query.or(`property_address.ilike.%${search}%,owner_name.ilike.%${search}%,apn.ilike.%${search}%,city.ilike.%${search}%`)
   }
 
   const sortBy = (req.query.sort_by as string) || 'created_at'
@@ -87,34 +88,29 @@ router.get('/properties/:id', asyncHandler(async (req, res) => {
   res.json(data)
 }))
 
+const LEAD_TYPES = ['foreclosure_nod', 'foreclosure_not', 'probate', 'tax_lien', 'tax_sale'] as const
+
 // GET /api/investor/stats — dashboard counts
 router.get('/stats', asyncHandler(async (_req, res) => {
-  const { data, error } = await supabaseAdmin
-    .from('distressed_properties')
-    .select('lead_type')
-    .eq('status', 'active')
+  const countQueries = LEAD_TYPES.map(lt =>
+    supabaseAdmin.from('distressed_properties').select('*', { count: 'exact', head: true }).eq('status', 'active').eq('lead_type', lt)
+  )
 
-  if (error) {
-    console.error('Failed to fetch property stats:', error)
+  const [totalResult, ...typeResults] = await Promise.all([
+    supabaseAdmin.from('distressed_properties').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+    ...countQueries,
+    // recent is last — but we need to handle it separately
+  ])
+
+  if (totalResult.error) {
+    console.error('Failed to fetch property stats:', totalResult.error)
     res.status(500).json({ error: 'Failed to fetch stats' })
     return
   }
 
-  const counts: Record<string, number> = {
-    foreclosure_nod: 0,
-    foreclosure_not: 0,
-    probate: 0,
-    tax_lien: 0,
-    tax_sale: 0,
-    total: 0
-  }
+  const counts: Record<string, number> = { total: totalResult.count || 0 }
+  LEAD_TYPES.forEach((lt, i) => { counts[lt] = typeResults[i].count || 0 })
 
-  for (const row of data) {
-    counts[row.lead_type] = (counts[row.lead_type] || 0) + 1
-    counts.total++
-  }
-
-  // Get recent additions
   const { data: recent } = await supabaseAdmin
     .from('distressed_properties')
     .select('*')

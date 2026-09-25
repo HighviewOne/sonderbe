@@ -45,8 +45,8 @@ export function CsvUpload() {
       )
       setResult(data)
       setFile(null)
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Upload failed')
     } finally {
       setUploading(false)
     }

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import Stripe from 'stripe'
 import { supabaseAdmin } from '../config.js'
-import { requireAuth } from '../middleware/auth.js'
+import { requireAuth, invalidateRoleCache } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 
@@ -13,11 +13,16 @@ interface SubscriptionWithPeriod extends Stripe.Subscription {
   current_period_end: number
 }
 
-function getStripe() {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error('STRIPE_SECRET_KEY not configured')
+// Created lazily so a missing key only breaks Stripe routes, not the whole server
+let stripeClient: Stripe | null = null
+function getStripe(): Stripe {
+  if (!stripeClient) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error('STRIPE_SECRET_KEY not configured')
+    }
+    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY)
   }
-  return new Stripe(process.env.STRIPE_SECRET_KEY)
+  return stripeClient
 }
 
 // POST /api/stripe/create-checkout — create Stripe Checkout session
@@ -82,8 +87,8 @@ router.post('/create-checkout', requireAuth, asyncHandler(async (req: Authentica
   res.json({ url: session.url })
 }))
 
-// POST /api/stripe/webhook — Stripe webhook handler (uses raw body)
-router.post('/webhook', async (req, res) => {
+// POST /api/stripe/webhook — Stripe webhook handler (raw body parsed in index.ts)
+router.post('/webhook', asyncHandler(async (req, res) => {
   const stripe = getStripe()
   const sig = req.headers['stripe-signature'] as string
 
@@ -135,6 +140,7 @@ router.post('/webhook', async (req, res) => {
             .from('profiles')
             .update({ role: 'investor', updated_at: new Date().toISOString() })
             .eq('id', userId)
+          invalidateRoleCache(userId)
         }
         break
       }
@@ -172,6 +178,7 @@ router.post('/webhook', async (req, res) => {
               .from('profiles')
               .update({ role: 'client', updated_at: new Date().toISOString() })
               .eq('id', sub.user_id)
+            invalidateRoleCache(sub.user_id)
           }
         }
         break
@@ -200,6 +207,7 @@ router.post('/webhook', async (req, res) => {
             .from('profiles')
             .update({ role: 'client', updated_at: new Date().toISOString() })
             .eq('id', sub.user_id)
+          invalidateRoleCache(sub.user_id)
         }
         break
       }
@@ -210,12 +218,11 @@ router.post('/webhook', async (req, res) => {
   }
 
   res.json({ received: true })
-})
+}))
 
 // POST /api/stripe/portal — create billing portal session
 router.post('/portal', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const stripe = getStripe()
-
   const { data: sub } = await supabaseAdmin
     .from('investor_subscriptions')
     .select('stripe_customer_id')

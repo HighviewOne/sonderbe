@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet } from '../../lib/api'
 import type { DistressedProperty } from '../../lib/supabase'
@@ -19,19 +19,38 @@ interface StatsResponse {
 export function InvestorDashboard() {
   const [stats, setStats] = useState<StatsResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadStats = useCallback(() => {
+    setLoading(true)
+    setError(null)
     apiGet<StatsResponse>('/investor/stats')
       .then(setStats)
-      .catch(console.error)
+      .catch((err) => {
+        console.error('Error loading investor stats:', err)
+        setError('Failed to load dashboard. Please refresh.')
+      })
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    loadStats()
+  }, [loadStats])
 
   if (loading) {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
         <p>Loading dashboard...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="investor-dashboard">
+        <div className="error-message">{error}</div>
+        <button className="btn btn-secondary" onClick={loadStats}>Retry</button>
       </div>
     )
   }

@@ -18,12 +18,15 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/checklist` — GET own, PUT upsert, GET /:userId (admin)
   - `/api/submissions` — GET (own or all if admin), POST (optional auth), PATCH /:id (admin)
   - `/api/documents` — GET own, POST /upload (multer 10MB), DELETE /:id, GET /:id/download, GET /user/:userId (admin), PATCH /:id (admin)
-  - `/api/admin` — GET /stats, /clients, /clients/:id, /documents, /properties (CRUD), /properties/csv-upload, /investors, /csv-uploads
+  - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads
   - `/api/investor` — GET /properties (search/filter/paginate), /properties/:id, /stats, /subscription
   - `/api/stripe` — POST /create-checkout, /webhook (raw body), /portal
 - Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, pg
 - Dev: tsx (watch mode), typescript
-- Stripe webhook registered BEFORE `express.json()` middleware for raw body access
+- Stripe webhook: `app.use('/api/stripe/webhook', express.raw(...))` in `index.ts` BEFORE `express.json()` — a router-level `express.raw()` alone does NOT work (json parses first, raw skips, signature check fails). Verified with a signed test event 2026-09-24
+- Stripe client created lazily via `getStripe()` so a missing `STRIPE_SECRET_KEY` only breaks Stripe routes, not server startup
+- Rate limiting (`express-rate-limit`): global 200 req/15min (skips the Stripe webhook) + submission limiter in `submissions.ts`. `app.set('trust proxy', 1)` so `req.ip` is the real client behind Render's proxy — **verify on Render that req.ip differs per client** (adjust the hop count if all requests share one IP)
+- `auth.ts` caches roles for 30s; call `invalidateRoleCache(userId)` after any `profiles.role` change (the Stripe webhook does). Failed profile lookups are not cached
 - Security: `helmet()` for security headers, CORS restricted to `FRONTEND_URL`, `express.json({ limit: '1mb' })` body size limit
 - All route handlers wrapped with `asyncHandler` for consistent error forwarding
 - Error responses sanitized — no raw DB/Supabase error messages sent to clients (logged server-side via `console.error`)
@@ -115,13 +118,19 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 - **Stripe webhook**: `https://sonderbe.onrender.com/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
   - Signing secret stored as `STRIPE_WEBHOOK_SECRET` in Render env vars
 
-## In Progress
+## Status (assessed 2026-06-12)
 
-- Direct PostgreSQL connection via `pg` Pool added to `server/src/config.ts` — connection verified and working
-- `pg` package added to `server/package.json`, Pool exported from config
-- `DATABASE_URL` uses the session mode pooler (`aws-1-us-east-1.pooler.supabase.com:5432`)
-- **Unknown**: the original purpose/task for adding direct `pg` access was lost due to a restart. The Pool is set up and connected but not yet used by any routes. The user does not recall the original intent. Next step: decide what to use it for or remove it if unnecessary.
+- **Supabase project `gfeeiyjhjapysiqxwiqi` is gone** — DNS returns NXDOMAIN (free-tier project paused/removed after ~4.5 months of inactivity since Jan 30, 2026). This is why "the database stopped working." Full rebuild is possible: base schema in `supabase/schema.sql` (profiles, contact_submissions, checklist_progress, documents, storage bucket, RLS, triggers incl. `handle_new_user`) + `server/migrations/001_investor_portal.sql` (investor tables). After creating a new project, update Supabase URL/keys in `.env.local`, `server/.env`, Render env vars, and Vercel env vars (then redeploy frontend — VITE_ vars are build-time).
+- **Stripe checkout bug found and fixed in `server/.env`**: `STRIPE_PRICE_ID` was set to a product ID (`prod_Tsu6EoAt319qUL`) instead of a price ID — Stripe checkout rejects product IDs, so every checkout failed. Corrected to `price_1Sv8I9Hdn9u1Gfdher0BRAId` ($0/month test price on that product). The same wrong value is likely still in Render's `STRIPE_PRICE_ID` env var — fix there too.
+- Render backend (`sonderbe.onrender.com`) and Vercel frontend both still deployed and responding (Render free tier cold-starts ~20s).
+- Frontend typecheck and server build both pass.
+- Large uncommitted working-tree batch (security/robustness hardening: auth role caching, in-memory token store via `src/lib/tokenStore.ts`, signOut cleanup, hash-router reset-password redirect, field whitelists, rate limiting) — not yet committed.
+- **Code review 2026-09-24** of that batch found 10 issues; fixed (uncommitted, builds + typecheck pass): Stripe webhook raw-body regression, rate limiters keyed on Render proxy IP, stale role cache after checkout, AuthContext 5s timeout rendering user-without-profile during Render cold starts, eager Stripe init crashing server, admin client detail 404 for investors, PropertyForm edit loading blank (UUID sent as `search`) and able to overwrite data, signOut not clearing state on error.
+  - Still open: (7) reset-password redirect `/#/reset-password` may collide with Supabase's implicit-flow `#access_token` fragment — test with a real reset email once Supabase is rebuilt; (10) `investor.ts` /stats only checks the total count's error, per-type count failures silently show 0.
+  - Pre-existing lint error: `AuthContext.tsx` exports `useAuth` alongside the provider (react-refresh/only-export-components).
+- The `pg` Pool mystery from the previous session is resolved: the uncommitted diff removes `pg` from `config.ts`/`package.json` entirely; `DATABASE_URL` no longer needed once that diff is committed.
+- `supabase/config.toml` exists from `supabase init` (local dev was being set up); supabase CLI is not installed, Docker is available.
 - **Fixed**: `supabase.auth.getSession()` deadlocks in Supabase v2 when used alongside `onAuthStateChange`. Two fixes applied:
-  - `AuthContext.tsx`: replaced `getSession()` + `onAuthStateChange` with `onAuthStateChange`-only initialization (Supabase v2 fires `INITIAL_SESSION` event automatically)
+  - `AuthContext.tsx`: replaced `getSession()` + `onAuthStateChange` with `onAuthStateChange`-only initialization (Supabase v2 fires `INITIAL_SESSION` event automatically). The handler clears the 5s fallback timeout as soon as any auth event fires, so `loading` stays true until the profile fetch finishes (don't let route guards see a user with a null profile during Render cold starts)
   - `api.ts`: replaced `getAuthHeaders()` calling `supabase.auth.getSession()` with direct `localStorage` read of the Supabase auth token (key: `sb-<project-ref>-auth-token`). No longer imports `supabase` client.
 - **Deployment verified**: Frontend (Vercel) + Backend (Render) fully working end-to-end — auth, portal dashboard, API calls all functional

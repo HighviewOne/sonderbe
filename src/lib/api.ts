@@ -1,20 +1,10 @@
+import { getAccessToken } from './tokenStore'
+
 const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
-const SUPABASE_STORAGE_KEY = `sb-${import.meta.env.VITE_SUPABASE_URL?.replace(/^https?:\/\//, '').split('.')[0]}-auth-token`
-
 function getAuthHeaders(): Record<string, string> {
-  try {
-    const stored = localStorage.getItem(SUPABASE_STORAGE_KEY)
-    if (stored) {
-      const { access_token } = JSON.parse(stored)
-      if (access_token) {
-        return { Authorization: `Bearer ${access_token}` }
-      }
-    }
-  } catch {
-    // ignore parse errors
-  }
-  return {}
+  const token = getAccessToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {

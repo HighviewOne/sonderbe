@@ -56,7 +56,7 @@ export function useDocuments() {
     }
   }
 
-  const deleteDocument = async (documentId: string, _filePath: string) => {
+  const deleteDocument = async (documentId: string) => {
     if (!user) return false
 
     try {
@@ -70,7 +70,7 @@ export function useDocuments() {
     }
   }
 
-  const getDownloadUrl = async (_filePath: string, documentId: string): Promise<string | null> => {
+  const getDownloadUrl = async (documentId: string): Promise<string | null> => {
     try {
       const data = await apiGet<{ url: string }>(`/documents/${documentId}/download`)
       return data.url

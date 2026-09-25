@@ -11,8 +11,8 @@ export function InvestorSubscribePage() {
     setError('')
     try {
       await createCheckout()
-    } catch (e: any) {
-      setError(e.message || 'Failed to start checkout')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to start checkout')
       setLoading(false)
     }
   }
