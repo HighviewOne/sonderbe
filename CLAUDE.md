@@ -49,7 +49,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 - Supabase project: `gfeeiyjhjapysiqxwiqi.supabase.co`
 - Direct DB host (`db.gfeeiyjhjapysiqxwiqi.supabase.co`) is IPv6-only; use the Supabase connection pooler (`aws-1-us-east-1.pooler.supabase.com:5432`) for environments without IPv6
-- `DATABASE_URL` is no longer used by the code (pg Pool removed); it can be dropped from `server/.env` and Render
+- `DATABASE_URL` is no longer used by the code (pg Pool removed); removed from `server/.env` 2026-09-24 — still needs deleting from Render's env vars (user's step)
 - Tables: `profiles`, `contact_submissions`, `documents`, `checklist_progress`, `distressed_properties`, `investor_subscriptions`, `csv_uploads`
 - Storage bucket: `client-documents`
 - DB trigger `handle_new_user` auto-creates profiles on signup (role defaults to 'client'; admins must be promoted manually via DB update)
@@ -93,7 +93,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 ## Running Locally
 
-1. Create `server/.env` from `server/.env.example` with `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
+1. Create `server/.env` (no `.env.example` exists in the repo) with `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
 2. Run SQL migration: `server/migrations/001_investor_portal.sql` in Supabase SQL Editor
 3. `cd server && npm install && npm run dev` (Express on port 3001)
 4. `npm run dev` (Vite frontend with proxy)
