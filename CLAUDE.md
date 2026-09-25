@@ -93,7 +93,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 ## Running Locally
 
-1. Create `server/.env` (no `.env.example` exists in the repo) with `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
+1. Create `server/.env` from `server/.env.example` with `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
 2. Run SQL migration: `server/migrations/001_investor_portal.sql` in Supabase SQL Editor
 3. `cd server && npm install && npm run dev` (Express on port 3001)
 4. `npm run dev` (Vite frontend with proxy)
