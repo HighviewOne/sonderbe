@@ -21,9 +21,8 @@ export function InvestorDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const loadStats = useCallback(() => {
-    setLoading(true)
-    setError(null)
+  // No synchronous setState here — it runs from the mount effect
+  const fetchStats = useCallback(() => {
     apiGet<StatsResponse>('/investor/stats')
       .then(setStats)
       .catch((err) => {
@@ -34,8 +33,14 @@ export function InvestorDashboard() {
   }, [])
 
   useEffect(() => {
-    loadStats()
-  }, [loadStats])
+    fetchStats()
+  }, [fetchStats])
+
+  const retry = () => {
+    setLoading(true)
+    setError(null)
+    fetchStats()
+  }
 
   if (loading) {
     return (
@@ -50,7 +55,7 @@ export function InvestorDashboard() {
     return (
       <div className="investor-dashboard">
         <div className="error-message">{error}</div>
-        <button className="btn btn-secondary" onClick={loadStats}>Retry</button>
+        <button className="btn btn-secondary" onClick={retry}>Retry</button>
       </div>
     )
   }

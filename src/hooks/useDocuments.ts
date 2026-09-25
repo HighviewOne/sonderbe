@@ -10,26 +10,27 @@ export function useDocuments() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadDocuments = useCallback(async () => {
-    if (!user) {
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    try {
-      const data = await apiGet<Document[]>('/documents')
-      setDocuments(data)
-    } catch (err) {
-      console.error('Error loading documents:', err)
-      setError('Failed to load documents')
-    }
-    setLoading(false)
+  // Only sets state in promise callbacks, so it's safe to call from the effect.
+  // With no user, `loading` is derived as false below.
+  const fetchDocuments = useCallback(() => {
+    if (!user) return Promise.resolve()
+    return apiGet<Document[]>('/documents')
+      .then(setDocuments)
+      .catch(err => {
+        console.error('Error loading documents:', err)
+        setError('Failed to load documents')
+      })
+      .finally(() => setLoading(false))
   }, [user])
 
   useEffect(() => {
-    loadDocuments()
-  }, [loadDocuments])
+    fetchDocuments()
+  }, [fetchDocuments])
+
+  const loadDocuments = useCallback(async () => {
+    setLoading(true)
+    await fetchDocuments()
+  }, [fetchDocuments])
 
   const uploadDocument = async (file: File, category?: string): Promise<Document | null> => {
     if (!user) {
@@ -82,7 +83,7 @@ export function useDocuments() {
 
   return {
     documents,
-    loading,
+    loading: user ? loading : false,
     uploading,
     error,
     uploadDocument,

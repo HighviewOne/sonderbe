@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { PropertySearchParams } from '../../lib/supabase'
+import type { PropertySearchParams, County, LeadType } from '../../lib/supabase'
 
 const COUNTIES = ['Los Angeles', 'Orange', 'Riverside', 'San Bernardino', 'San Diego', 'Ventura']
 const LEAD_TYPES = [
@@ -41,7 +41,7 @@ export function PropertyFilters({ params, onFilter }: PropertyFiltersProps) {
           <label>County</label>
           <select
             value={params.county || ''}
-            onChange={e => onFilter({ county: e.target.value as any || undefined })}
+            onChange={e => onFilter({ county: (e.target.value || undefined) as County | undefined })}
           >
             <option value="">All Counties</option>
             {COUNTIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -52,7 +52,7 @@ export function PropertyFilters({ params, onFilter }: PropertyFiltersProps) {
           <label>Lead Type</label>
           <select
             value={params.lead_type || ''}
-            onChange={e => onFilter({ lead_type: e.target.value as any || undefined })}
+            onChange={e => onFilter({ lead_type: (e.target.value || undefined) as LeadType | undefined })}
           >
             <option value="">All Types</option>
             {LEAD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}

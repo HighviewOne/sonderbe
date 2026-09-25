@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
 import { adminOnly } from '../middleware/adminOnly.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
-import type { AuthenticatedRequest, Profile, ContactSubmission, Document, DistressedProperty, County, LeadType } from '../types.js'
+import type { AuthenticatedRequest, Profile, Document, DistressedProperty, County, LeadType } from '../types.js'
 import multer from 'multer'
 import { parse } from 'csv-parse/sync'
 
@@ -309,7 +309,7 @@ router.post('/properties/csv-upload', csvUpload.single('file'), asyncHandler(asy
       skip_empty_lines: true,
       trim: true
     })
-  } catch (e) {
+  } catch {
     res.status(400).json({ error: 'Failed to parse CSV file' })
     return
   }
@@ -418,7 +418,7 @@ router.get('/investors', asyncHandler(async (_req, res) => {
     subscriptions = subs || []
   }
 
-  const subMap = new Map(subscriptions.map((s: any) => [s.user_id, s]))
+  const subMap = new Map(subscriptions.map(s => [s.user_id as string, s]))
 
   const result = (investors as Profile[]).map(inv => ({
     ...inv,

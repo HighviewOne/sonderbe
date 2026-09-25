@@ -13,19 +13,11 @@ export function SubmissionsList() {
   const [editingNotes, setEditingNotes] = useState<{ id: string; notes: string } | null>(null)
 
   useEffect(() => {
-    loadSubmissions()
+    apiGet<ContactSubmission[]>('/submissions')
+      .then(setSubmissions)
+      .catch(err => console.error('Error loading submissions:', err))
+      .finally(() => setLoading(false))
   }, [])
-
-  const loadSubmissions = async () => {
-    setLoading(true)
-    try {
-      const data = await apiGet<ContactSubmission[]>('/submissions')
-      setSubmissions(data)
-    } catch (err) {
-      console.error('Error loading submissions:', err)
-    }
-    setLoading(false)
-  }
 
   const updateStatus = async (id: string, status: ContactSubmission['status']) => {
     try {
