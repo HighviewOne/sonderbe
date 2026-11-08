@@ -51,7 +51,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 - Supabase project: `gfeeiyjhjapysiqxwiqi.supabase.co`
 - Direct DB host (`db.gfeeiyjhjapysiqxwiqi.supabase.co`) is IPv6-only; use the Supabase connection pooler (`aws-1-us-east-1.pooler.supabase.com:5432`) for environments without IPv6
-- `DATABASE_URL` is no longer used by the code (pg Pool removed); removed from `server/.env` 2026-09-24 — still needs deleting from Render's env vars (user's step)
+- `DATABASE_URL` is no longer used by the code (pg Pool removed); removed from `server/.env` 2026-09-24 and from Render 2026-11-08
 - Tables: `profiles`, `contact_submissions`, `documents`, `checklist_progress`, `distressed_properties`, `investor_subscriptions`, `csv_uploads`
 - Storage bucket: `client-documents`
 - DB trigger `handle_new_user` auto-creates profiles on signup (role defaults to 'client'; admins must be promoted manually via DB update)
@@ -130,7 +130,7 @@ contact details + item-level checklist → homeowner sees the professional's con
 - **Backend**: Render Web Service — `https://sonderbe.onrender.com`
   - Repo: `HighviewOne/sonderbe`, root directory: `server`
   - Build: `npm install --include=dev && npm run build` (must include dev deps for TypeScript/@types), Start: `npm start`
-  - Env vars: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL=https://sonderbe.vercel.app`
+  - Env vars: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL=https://sonderbe.vercel.app`
   - CORS configured via `FRONTEND_URL` env var
   - Render uses port from `PORT` env var (auto-assigned, currently 10000)
 - **Stripe webhook**: `https://sonderbe.onrender.com/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
@@ -143,7 +143,7 @@ contact details + item-level checklist → homeowner sees the professional's con
 - **Stripe checkout bug found and fixed in `server/.env`**: `STRIPE_PRICE_ID` was set to a product ID (`prod_Tsu6EoAt319qUL`) instead of a price ID — Stripe checkout rejects product IDs, so every checkout failed. Corrected to `price_1Sv8I9Hdn9u1Gfdher0BRAId` ($0/month test price on that product). The same wrong value is likely still in Render's `STRIPE_PRICE_ID` env var — fix there too.
 - Render backend (`sonderbe.onrender.com`) and Vercel frontend both still deployed and responding (Render free tier cold-starts ~20s).
 - Frontend typecheck and server build both pass.
-- **Branch `hardening-and-review-fixes` (2026-09-24, local, not pushed/merged)** holds all post-January work: `95e56a1` security/robustness hardening (in-memory token store via `src/lib/tokenStore.ts`, role caching, rate limiting, field whitelists, hash-router reset-password redirect) + review fixes; `ea03997` CI, lint cleanup, dependency updates; then `pg` removal and docs/env-example commits. `master` (last commit Jan 30) is what's deployed — merging auto-deploys both Vercel and Render, so merge after the Supabase rebuild and test together.
+- **Deployed 2026-11-08:** branch `hardening-and-review-fixes` merged to `master` via PR #1 (Vercel + Render auto-deployed). Verified live: 27/27 API checks against `sonderbe.onrender.com` (matching flow + Stripe checkout session in test mode, so Render's `STRIPE_PRICE_ID` is now a valid price), new frontend bundle on `sonderbe.vercel.app` pointing at Render, CORS OK. `DATABASE_URL` deleted from Render (old `master` crashed without it — Render kept the previous instance up until the merge). Still to verify on Render: per-client `req.ip`.
 - **Code review 2026-09-24** of that batch found 10 issues; 8 fixed (committed on the branch above): Stripe webhook raw-body regression, rate limiters keyed on Render proxy IP, stale role cache after checkout, AuthContext 5s timeout rendering user-without-profile during Render cold starts, eager Stripe init crashing server, admin client detail 404 for investors, PropertyForm edit loading blank (UUID sent as `search`) and able to overwrite data, signOut not clearing state on error.
   - Still open: (7) reset-password redirect `/#/reset-password` may collide with Supabase's implicit-flow `#access_token` fragment — test with a real reset email once Supabase is rebuilt; (10) `investor.ts` /stats only checks the total count's error, per-type count failures silently show 0.
 - **CI** (`.github/workflows/ci.yml`, added 2026-09-24): on PRs and pushes to master runs `npm run lint` (root ESLint config covers `src/` and `server/src/`), frontend build (`tsc -b && vite build`), server build. Lint was cleaned to zero errors.
@@ -156,5 +156,5 @@ contact details + item-level checklist → homeowner sees the professional's con
   - `api.ts`: replaced `getAuthHeaders()` calling `supabase.auth.getSession()` — now superseded: auth headers come from the in-memory `src/lib/tokenStore.ts`, which `AuthContext` fills from `onAuthStateChange`. No longer imports `supabase` client.
 - **Deployment verified**: Frontend (Vercel) + Backend (Render) fully working end-to-end — auth, portal dashboard, API calls all functional
 - **Matching verified end-to-end 2026-11-08** against the real DB + local backend (26/26: consent/validation, county scoping, hidden contact before claim, atomic claim race, release/close/reopen, withdrawal hides details, role 403s, anon key blocked). User clicked through the UI locally (homeowner + professional demo logins) and approved it.
-- **Next steps (2026-09-24, updated 2026-11-08):** (1) ~~rebuild Supabase~~ done (resumed); fix Render `STRIPE_PRICE_ID`; (2) merge the branch, verify on Render (per-client `req.ip`, checkout → investor promotion, property edit, investor client detail); (3) open items 7 and 10; (4) prevent another free-tier pause/deletion (paid plan or a keep-alive ping from cron/hamptonserver).
+- **Next steps (2026-09-24, updated 2026-11-08):** (1) ~~rebuild Supabase~~ done (resumed); ~~fix Render `STRIPE_PRICE_ID`~~ done; (2) ~~merge~~ done 2026-11-08; still verify on Render: per-client `req.ip`, a completed checkout → investor promotion via webhook; (3) open items 7 and 10; (4) ~~keep-alive~~ done; (5) business validation: agent calls, attorney review of consent text + letter (`docs/outreach/`).
 - Untracked in repo root: three June 2026 foreclosure research/timeline docs (`2026-06-1*-*.md/.html`) and `supabase/config.toml` + `.gitignore` — the user hasn't decided where they belong.
