@@ -16,21 +16,11 @@ export function DocumentsReview() {
   const [editingNotes, setEditingNotes] = useState<{ id: string; notes: string } | null>(null)
 
   useEffect(() => {
-    loadDocuments()
+    apiGet<DocumentWithClient[]>('/admin/documents')
+      .then(setDocuments)
+      .catch(err => console.error('Error loading documents:', err))
+      .finally(() => setLoading(false))
   }, [])
-
-  const loadDocuments = async () => {
-    setLoading(true)
-
-    try {
-      const data = await apiGet<DocumentWithClient[]>('/admin/documents')
-      setDocuments(data)
-    } catch (err) {
-      console.error('Error loading documents:', err)
-    }
-
-    setLoading(false)
-  }
 
   const updateStatus = async (id: string, status: Document['status']) => {
     try {

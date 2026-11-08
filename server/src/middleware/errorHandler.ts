@@ -9,7 +9,7 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
   }
 
   // JSON parse error (bad request body)
-  if ((err as any).type === 'entity.parse.failed') {
+  if ((err as { type?: string }).type === 'entity.parse.failed') {
     res.status(400).json({ error: 'Invalid JSON' })
     return
   }

@@ -5,6 +5,7 @@ import type { InvestorSubscription } from '../lib/supabase'
 export function useSubscription() {
   const [subscription, setSubscription] = useState<InvestorSubscription | null>(null)
   const [loading, setLoading] = useState(true)
+  const [portalError, setPortalError] = useState<string | null>(null)
 
   const fetchSubscription = useCallback(async () => {
     try {
@@ -29,11 +30,17 @@ export function useSubscription() {
   }
 
   const openBillingPortal = async () => {
-    const data = await apiPost<{ url: string }>('/stripe/portal')
-    if (data.url) {
-      window.location.href = data.url
+    setPortalError(null)
+    try {
+      const data = await apiPost<{ url: string }>('/stripe/portal')
+      if (data.url) {
+        window.location.href = data.url
+      }
+    } catch (err) {
+      console.error('Failed to open billing portal:', err)
+      setPortalError('Failed to open billing portal. Please try again.')
     }
   }
 
-  return { subscription, loading, createCheckout, openBillingPortal, refetch: fetchSubscription }
+  return { subscription, loading, portalError, createCheckout, openBillingPortal, refetch: fetchSubscription }
 }

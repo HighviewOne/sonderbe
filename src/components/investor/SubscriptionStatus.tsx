@@ -1,7 +1,7 @@
 import { useSubscription } from '../../hooks/useSubscription'
 
 export function SubscriptionStatus() {
-  const { subscription, loading, openBillingPortal } = useSubscription()
+  const { subscription, loading, portalError, openBillingPortal } = useSubscription()
 
   if (loading) {
     return (
@@ -24,7 +24,7 @@ export function SubscriptionStatus() {
     <div className="subscription-status">
       <div className="page-header">
         <h1>Subscription</h1>
-        <p>Manage your investor portal subscription</p>
+        <p>Manage your professional portal subscription</p>
       </div>
 
       <div className="subscription-card">
@@ -51,6 +51,8 @@ export function SubscriptionStatus() {
             Your payment is past due. Please update your payment method to maintain access.
           </div>
         )}
+
+        {portalError && <div className="error-message">{portalError}</div>}
 
         {subscription && (
           <button className="btn btn-primary" onClick={openBillingPortal}>

@@ -20,6 +20,9 @@ export function PropertyForm() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // In edit mode, saving is blocked until the existing record has loaded —
+  // otherwise a blank form would overwrite the property with empty fields
+  const [loaded, setLoaded] = useState(!id)
 
   const [form, setForm] = useState({
     lead_type: '' as string,
@@ -46,37 +49,31 @@ export function PropertyForm() {
   useEffect(() => {
     if (!id) return
     setLoading(true)
-    apiGet<DistressedProperty>(`/admin/properties?search=${id}`)
-      .catch(() => null)
-
-    // Fetch from admin properties list filtered by id
-    const params = new URLSearchParams({ search: id, limit: '1' })
-    apiGet<{ properties: DistressedProperty[] }>(`/admin/properties?${params}`)
-      .then(data => {
-        const p = data.properties.find(prop => prop.id === id)
-        if (p) {
-          setForm({
-            lead_type: p.lead_type,
-            county: p.county,
-            property_address: p.property_address || '',
-            city: p.city || '',
-            zip: p.zip || '',
-            apn: p.apn || '',
-            owner_name: p.owner_name || '',
-            owner_mailing_address: p.owner_mailing_address || '',
-            estimated_value: p.estimated_value?.toString() || '',
-            outstanding_debt: p.outstanding_debt?.toString() || '',
-            estimated_equity: p.estimated_equity?.toString() || '',
-            opening_bid: p.opening_bid?.toString() || '',
-            recording_date: p.recording_date || '',
-            document_number: p.document_number || '',
-            case_number: p.case_number || '',
-            status: p.status,
-            sale_date: p.sale_date || '',
-            notes: p.notes || '',
-            source: p.source || ''
-          })
-        }
+    setLoaded(false)
+    apiGet<DistressedProperty>(`/admin/properties/${id}`)
+      .then(p => {
+        setForm({
+          lead_type: p.lead_type,
+          county: p.county,
+          property_address: p.property_address || '',
+          city: p.city || '',
+          zip: p.zip || '',
+          apn: p.apn || '',
+          owner_name: p.owner_name || '',
+          owner_mailing_address: p.owner_mailing_address || '',
+          estimated_value: p.estimated_value?.toString() || '',
+          outstanding_debt: p.outstanding_debt?.toString() || '',
+          estimated_equity: p.estimated_equity?.toString() || '',
+          opening_bid: p.opening_bid?.toString() || '',
+          recording_date: p.recording_date || '',
+          document_number: p.document_number || '',
+          case_number: p.case_number || '',
+          status: p.status,
+          sale_date: p.sale_date || '',
+          notes: p.notes || '',
+          source: p.source || ''
+        })
+        setLoaded(true)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -89,6 +86,11 @@ export function PropertyForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    if (!loaded) {
+      setError('Property failed to load — reload the page before saving')
+      return
+    }
 
     if (!form.lead_type || !form.county) {
       setError('Lead type and county are required')
@@ -123,8 +125,8 @@ export function PropertyForm() {
         await apiPost('/admin/properties', payload)
       }
       navigate('/admin/properties')
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Save failed')
     } finally {
       setSaving(false)
     }
@@ -248,7 +250,7 @@ export function PropertyForm() {
           <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} />
         </div>
 
-        <button type="submit" className="btn btn-primary" disabled={saving}>
+        <button type="submit" className="btn btn-primary" disabled={saving || !loaded}>
           {saving ? 'Saving...' : isEdit ? 'Update Property' : 'Add Property'}
         </button>
       </form>

@@ -17,6 +17,7 @@ export type Profile = {
   full_name: string | null
   phone: string | null
   role: 'client' | 'admin' | 'investor'
+  service_counties?: string[]
   created_at: string
   updated_at: string
 }

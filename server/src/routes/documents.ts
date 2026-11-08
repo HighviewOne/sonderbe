@@ -94,6 +94,7 @@ router.post('/upload', requireAuth, upload.single('file'), asyncHandler(async (r
 
   if (docError) {
     console.error('Document metadata save failed:', docError)
+    await supabaseAdmin.storage.from('client-documents').remove([fileName])
     res.status(500).json({ error: 'Failed to save document metadata' })
     return
   }
@@ -116,9 +117,12 @@ router.delete('/:id', requireAuth, asyncHandler(async (req: AuthenticatedRequest
   }
 
   // Delete from storage
-  await supabaseAdmin.storage
+  const { error: storageError } = await supabaseAdmin.storage
     .from('client-documents')
     .remove([doc.file_path])
+  if (storageError) {
+    console.error('Storage delete failed, orphaned file:', doc.file_path, storageError)
+  }
 
   // Delete from database
   const { error: deleteError } = await supabaseAdmin
@@ -183,9 +187,16 @@ router.get('/user/:userId', requireAuth, adminOnly, asyncHandler(async (req, res
   res.json(data)
 }))
 
+const VALID_DOCUMENT_STATUSES = ['uploaded', 'reviewed', 'approved', 'rejected']
+
 // PATCH /api/documents/:id — update status/notes (admin only)
 router.patch('/:id', requireAuth, adminOnly, asyncHandler(async (req, res) => {
   const { status, admin_notes } = req.body
+
+  if (status !== undefined && !VALID_DOCUMENT_STATUSES.includes(status)) {
+    res.status(400).json({ error: 'Invalid status' })
+    return
+  }
 
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString()

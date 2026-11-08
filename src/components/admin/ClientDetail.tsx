@@ -20,27 +20,22 @@ export function ClientDetail() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (clientId) {
-      loadClientData()
-    }
-  }, [clientId])
-
-  const loadClientData = async () => {
     if (!clientId) return
-    setLoading(true)
+    let cancelled = false
 
-    try {
-      const data = await apiGet<ClientData>(`/admin/clients/${clientId}`)
-      setClient(data.profile)
-      setSubmissions(data.submissions)
-      setDocuments(data.documents)
-      setChecklistProgress(data.checklist)
-    } catch (err) {
-      console.error('Error loading client data:', err)
-    }
+    apiGet<ClientData>(`/admin/clients/${clientId}`)
+      .then(data => {
+        if (cancelled) return
+        setClient(data.profile)
+        setSubmissions(data.submissions)
+        setDocuments(data.documents)
+        setChecklistProgress(data.checklist)
+      })
+      .catch(err => console.error('Error loading client data:', err))
+      .finally(() => { if (!cancelled) setLoading(false) })
 
-    setLoading(false)
-  }
+    return () => { cancelled = true }
+  }, [clientId])
 
   const updateDocumentStatus = async (docId: string, status: Document['status'], notes?: string) => {
     try {

@@ -25,8 +25,8 @@ export function MyChecklist() {
     <div className="my-checklist">
       <div className="checklist-page-header">
         <div className="header-content">
-          <h1>Document Checklist</h1>
-          <p>Track your progress gathering documents for your loan modification application</p>
+          <h1>Readiness Checklist</h1>
+          <p>Check off each item once you have it ready. Don't upload anything here — keep your documents at home. If you ask to be matched, your professional collects them from you directly.</p>
         </div>
         <div className="overall-progress">
           <div className="progress-bar-container">
@@ -36,7 +36,7 @@ export function MyChecklist() {
             ></div>
           </div>
           <span className="progress-text">
-            {totalProgress.checked}/{totalProgress.total} complete ({totalProgress.percentage}%)
+            {totalProgress.checked}/{totalProgress.total} ready ({totalProgress.percentage}%)
             {saving && <span className="saving-indicator"> Saving...</span>}
           </span>
         </div>
@@ -102,7 +102,7 @@ export function MyChecklist() {
       </div>
 
       <div className="checklist-tip">
-        <strong>Tip:</strong> Your progress is automatically saved. Make copies of all documents before submitting. Keep originals in a safe place and note the date you sent each item.
+        <strong>Tip:</strong> Your progress saves automatically. Keep originals in a safe place, make copies before sending anything, and note the date you sent each item. Never pay anyone upfront for foreclosure help.
       </div>
     </div>
   )

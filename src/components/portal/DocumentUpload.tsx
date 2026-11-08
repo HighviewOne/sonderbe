@@ -45,7 +45,7 @@ export function DocumentUpload() {
   }
 
   const handleDownload = async (doc: typeof documents[0]) => {
-    const url = await getDownloadUrl(doc.file_path, doc.id)
+    const url = await getDownloadUrl(doc.id)
     if (url) {
       window.open(url, '_blank')
     }
@@ -53,7 +53,7 @@ export function DocumentUpload() {
 
   const handleDelete = async (doc: typeof documents[0]) => {
     if (deleteConfirm === doc.id) {
-      await deleteDocument(doc.id, doc.file_path)
+      await deleteDocument(doc.id)
       setDeleteConfirm(null)
     } else {
       setDeleteConfirm(doc.id)

@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
 import { adminOnly } from '../middleware/adminOnly.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
-import type { AuthenticatedRequest, Profile, ContactSubmission, Document, DistressedProperty, County, LeadType } from '../types.js'
+import type { AuthenticatedRequest, Profile, Document, DistressedProperty, County, LeadType } from '../types.js'
 import multer from 'multer'
 import { parse } from 'csv-parse/sync'
 
@@ -37,33 +37,20 @@ function pickPropertyFields(body: Record<string, unknown>): Record<string, unkno
 
 // GET /api/admin/stats — dashboard counts + recent data
 router.get('/stats', asyncHandler(async (_req, res) => {
-  const [clientsResult, submissionsResult, documentsResult] = await Promise.all([
-    supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq('role', 'client')
-      .order('created_at', { ascending: false }),
-    supabaseAdmin
-      .from('contact_submissions')
-      .select('*')
-      .order('created_at', { ascending: false }),
-    supabaseAdmin
-      .from('documents')
-      .select('*')
-      .eq('status', 'uploaded')
+  const [clientCountResult, newSubsResult, pendingDocsResult, recentClientsResult, recentSubsResult] = await Promise.all([
+    supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'client'),
+    supabaseAdmin.from('contact_submissions').select('*', { count: 'exact', head: true }).eq('status', 'new'),
+    supabaseAdmin.from('documents').select('*', { count: 'exact', head: true }).eq('status', 'uploaded'),
+    supabaseAdmin.from('profiles').select('id, email, full_name, created_at').eq('role', 'client').order('created_at', { ascending: false }).limit(5),
+    supabaseAdmin.from('contact_submissions').select('*').order('created_at', { ascending: false }).limit(5)
   ])
 
-  const clients = (clientsResult.data || []) as Profile[]
-  const submissions = (submissionsResult.data || []) as ContactSubmission[]
-  const pendingDocs = documentsResult.data?.length || 0
-  const newSubs = submissions.filter(s => s.status === 'new').length
-
   res.json({
-    totalClients: clients.length,
-    newSubmissions: newSubs,
-    pendingDocuments: pendingDocs,
-    recentClients: clients.slice(0, 5),
-    recentSubmissions: submissions.slice(0, 5)
+    totalClients: clientCountResult.count || 0,
+    newSubmissions: newSubsResult.count || 0,
+    pendingDocuments: pendingDocsResult.count || 0,
+    recentClients: recentClientsResult.data || [],
+    recentSubmissions: recentSubsResult.data || []
   })
 }))
 
@@ -94,7 +81,13 @@ router.get('/clients/:id', asyncHandler(async (req, res) => {
     supabaseAdmin.from('checklist_progress').select('*').eq('user_id', clientId)
   ])
 
-  if (profileResult.error) {
+  if (profileResult.error || !profileResult.data) {
+    res.status(404).json({ error: 'Client not found' })
+    return
+  }
+
+  // Investors are former clients and keep their documents/submissions — only hide admins
+  if (profileResult.data.role === 'admin') {
     res.status(404).json({ error: 'Client not found' })
     return
   }
@@ -161,7 +154,8 @@ router.get('/properties', asyncHandler(async (req, res) => {
   if (req.query.city) query = query.ilike('city', `%${req.query.city}%`)
   if (req.query.zip) query = query.eq('zip', req.query.zip)
   if (req.query.search) {
-    query = query.or(`property_address.ilike.%${req.query.search}%,owner_name.ilike.%${req.query.search}%,apn.ilike.%${req.query.search}%`)
+    const search = (req.query.search as string).replace(/[,%]/g, '').slice(0, 200)
+    query = query.or(`property_address.ilike.%${search}%,owner_name.ilike.%${search}%,apn.ilike.%${search}%`)
   }
 
   const sortBy = (req.query.sort_by as string) || 'created_at'
@@ -188,6 +182,27 @@ router.get('/properties', asyncHandler(async (req, res) => {
     limit,
     totalPages: Math.ceil((count || 0) / limit)
   })
+}))
+
+// GET /api/admin/properties/:id — single property (used by the edit form)
+router.get('/properties/:id', asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('distressed_properties')
+    .select('*')
+    .eq('id', req.params.id)
+    .single()
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      res.status(404).json({ error: 'Property not found' })
+      return
+    }
+    console.error('Failed to fetch property:', error)
+    res.status(500).json({ error: 'Failed to fetch property' })
+    return
+  }
+
+  res.json(data as DistressedProperty)
 }))
 
 // POST /api/admin/properties — create single property
@@ -233,6 +248,10 @@ router.put('/properties/:id', asyncHandler(async (req, res) => {
     .single()
 
   if (error) {
+    if (error.code === 'PGRST116') {
+      res.status(404).json({ error: 'Property not found' })
+      return
+    }
     console.error('Failed to update property:', error)
     res.status(500).json({ error: 'Failed to update property' })
     return
@@ -245,14 +264,19 @@ router.put('/properties/:id', asyncHandler(async (req, res) => {
 router.delete('/properties/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
 
-  const { error } = await supabaseAdmin
+  const { error, count } = await supabaseAdmin
     .from('distressed_properties')
-    .delete()
+    .delete({ count: 'exact' })
     .eq('id', id)
 
   if (error) {
     console.error('Failed to delete property:', error)
     res.status(500).json({ error: 'Failed to delete property' })
+    return
+  }
+
+  if (count === 0) {
+    res.status(404).json({ error: 'Property not found' })
     return
   }
 
@@ -285,13 +309,18 @@ router.post('/properties/csv-upload', csvUpload.single('file'), asyncHandler(asy
       skip_empty_lines: true,
       trim: true
     })
-  } catch (e) {
+  } catch {
     res.status(400).json({ error: 'Failed to parse CSV file' })
     return
   }
 
   if (records.length === 0) {
     res.status(400).json({ error: 'CSV file is empty' })
+    return
+  }
+
+  if (records.length > 5000) {
+    res.status(400).json({ error: 'CSV exceeds maximum of 5000 rows' })
     return
   }
 
@@ -389,7 +418,7 @@ router.get('/investors', asyncHandler(async (_req, res) => {
     subscriptions = subs || []
   }
 
-  const subMap = new Map(subscriptions.map((s: any) => [s.user_id, s]))
+  const subMap = new Map(subscriptions.map(s => [s.user_id as string, s]))
 
   const result = (investors as Profile[]).map(inv => ({
     ...inv,

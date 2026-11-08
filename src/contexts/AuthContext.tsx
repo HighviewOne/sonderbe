@@ -4,6 +4,7 @@ import type { User, Session, AuthError } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Profile } from '../lib/supabase'
 import { apiGet } from '../lib/api'
+import { setAccessToken } from '../lib/tokenStore'
 
 interface AuthContextType {
   user: User | null
@@ -27,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchProfile = async (_userId: string) => {
+  const fetchProfile = async () => {
     try {
       return await apiGet<Profile>('/profile')
     } catch (error) {
@@ -39,12 +40,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let initialLoad = true
 
+    // Fallback: if INITIAL_SESSION never fires, unblock the app after 5s
+    const timeout = setTimeout(() => {
+      if (initialLoad) {
+        setLoading(false)
+        initialLoad = false
+      }
+    }, 5000)
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
+        // The event fired, so the fallback isn't needed. Keep loading=true until the
+        // profile arrives (Render cold starts can take ~20s) so route guards don't
+        // see a user with no role.
+        clearTimeout(timeout)
+        setAccessToken(session?.access_token ?? null)
         setSession(session)
         setUser(session?.user ?? null)
         if (session?.user) {
-          const profile = await fetchProfile(session.user.id)
+          const profile = await fetchProfile()
           setProfile(profile)
         } else {
           setProfile(null)
@@ -56,7 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(timeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   const signUp = async (email: string, password: string, fullName?: string, phone?: string) => {
@@ -83,15 +100,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-    setProfile(null)
-    setSession(null)
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      // SIGNED_OUT isn't emitted when the call fails (offline, 5xx), so clear local state ourselves
+      console.error('Sign out error:', error)
+      setAccessToken(null)
+      setSession(null)
+      setUser(null)
+      setProfile(null)
+    }
   }
 
   const resetPassword = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`
+      redirectTo: `${window.location.origin}/#/reset-password`
     })
     return { error }
   }

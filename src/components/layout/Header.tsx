@@ -43,7 +43,7 @@ export function Header() {
                 <Link to="/portal" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>My Portal</Link>
               )}
               {isInvestor && !isInvestorPage && (
-                <Link to="/investor" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>Investor Portal</Link>
+                <Link to="/investor" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>Professional Portal</Link>
               )}
               {isAdmin && !isAdminPage && (
                 <Link to="/admin" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>Admin</Link>

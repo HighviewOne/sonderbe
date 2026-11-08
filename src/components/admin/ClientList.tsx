@@ -9,19 +9,11 @@ export function ClientList() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    loadClients()
+    apiGet<Profile[]>('/admin/clients')
+      .then(setClients)
+      .catch(err => console.error('Error loading clients:', err))
+      .finally(() => setLoading(false))
   }, [])
-
-  const loadClients = async () => {
-    setLoading(true)
-    try {
-      const data = await apiGet<Profile[]>('/admin/clients')
-      setClients(data)
-    } catch (err) {
-      console.error('Error loading clients:', err)
-    }
-    setLoading(false)
-  }
 
   const filteredClients = clients.filter(client =>
     client.full_name?.toLowerCase().includes(search.toLowerCase()) ||

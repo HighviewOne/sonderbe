@@ -11,19 +11,24 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 - Express app on port 3001, uses Supabase **service role key** (bypasses RLS; authorization enforced in middleware)
 - Entry: `server/src/index.ts`
-- Config: `server/src/config.ts` (creates `supabaseAdmin` client + `pg` Pool for direct PostgreSQL access)
+- Config: `server/src/config.ts` (creates the `supabaseAdmin` client; the old `pg` Pool was removed)
 - Middleware: `auth.ts` (requireAuth, optionalAuth — JWT verify via `supabaseAdmin.auth.getUser()`, both with try-catch), `adminOnly.ts` (checks `profile.role === 'admin'`), `investorOnly.ts` (checks investor role + active subscription, with try-catch), `errorHandler.ts` (handles multer 413, JSON parse 400, generic 500), `asyncHandler.ts` (wraps async route handlers to forward errors to Express error handler)
 - Routes:
   - `/api/profile` — GET own, GET /:id (admin)
   - `/api/checklist` — GET own, PUT upsert, GET /:userId (admin)
   - `/api/submissions` — GET (own or all if admin), POST (optional auth), PATCH /:id (admin)
   - `/api/documents` — GET own, POST /upload (multer 10MB), DELETE /:id, GET /:id/download, GET /user/:userId (admin), PATCH /:id (admin)
-  - `/api/admin` — GET /stats, /clients, /clients/:id, /documents, /properties (CRUD), /properties/csv-upload, /investors, /csv-uploads
+  - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads
   - `/api/investor` — GET /properties (search/filter/paginate), /properties/:id, /stats, /subscription
   - `/api/stripe` — POST /create-checkout, /webhook (raw body), /portal
-- Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, pg
+  - `/api/match` — homeowner (role client): GET own request + consent text + matched professional, POST create/reopen (consent required), DELETE withdraw
+  - `/api/leads` — subscribed professional (investorOnly): GET open leads in service counties (category counts only) + own claims (contact + item-level checklist), PUT /service-area, POST /:id/claim (atomic, max 10 active), /:id/release, /:id/close
+- Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, express-rate-limit
 - Dev: tsx (watch mode), typescript
-- Stripe webhook registered BEFORE `express.json()` middleware for raw body access
+- Stripe webhook: `app.use('/api/stripe/webhook', express.raw(...))` in `index.ts` BEFORE `express.json()` — a router-level `express.raw()` alone does NOT work (json parses first, raw skips, signature check fails). Verified with a signed test event 2026-09-24
+- Stripe client created lazily via `getStripe()` so a missing `STRIPE_SECRET_KEY` only breaks Stripe routes, not server startup
+- Rate limiting (`express-rate-limit`): global 200 req/15min (skips the Stripe webhook) + submission limiter in `submissions.ts`. `app.set('trust proxy', 1)` so `req.ip` is the real client behind Render's proxy — **verify on Render that req.ip differs per client** (adjust the hop count if all requests share one IP)
+- `auth.ts` caches roles for 30s; call `invalidateRoleCache(userId)` after any `profiles.role` change (the Stripe webhook does). Failed profile lookups are not cached
 - Security: `helmet()` for security headers, CORS restricted to `FRONTEND_URL`, `express.json({ limit: '1mb' })` body size limit
 - All route handlers wrapped with `asyncHandler` for consistent error forwarding
 - Error responses sanitized — no raw DB/Supabase error messages sent to clients (logged server-side via `console.error`)
@@ -46,7 +51,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 - Supabase project: `gfeeiyjhjapysiqxwiqi.supabase.co`
 - Direct DB host (`db.gfeeiyjhjapysiqxwiqi.supabase.co`) is IPv6-only; use the Supabase connection pooler (`aws-1-us-east-1.pooler.supabase.com:5432`) for environments without IPv6
-- `DATABASE_URL` env var in `server/.env` for direct PostgreSQL access via `pg` Pool
+- `DATABASE_URL` is no longer used by the code (pg Pool removed); removed from `server/.env` 2026-09-24 — still needs deleting from Render's env vars (user's step)
 - Tables: `profiles`, `contact_submissions`, `documents`, `checklist_progress`, `distressed_properties`, `investor_subscriptions`, `csv_uploads`
 - Storage bucket: `client-documents`
 - DB trigger `handle_new_user` auto-creates profiles on signup (role defaults to 'client'; admins must be promoted manually via DB update)
@@ -54,7 +59,22 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 - Migration: `server/migrations/001_investor_portal.sql` (run in Supabase SQL Editor)
 - Profile roles: `'client' | 'admin' | 'investor'`
 
-## Investor Portal
+## Product direction (decided 2026-11-08)
+
+Homeowner-first matching, sold to real estate professionals (mainly short-sale agents) by subscription. Homeowners
+never pay and SonderBe does **not** hold their financial documents: the checklist tracks "have it ready" only, and the
+matched professional collects documents directly. Flow: homeowner opts in (`/portal/match`, consent wording stored per
+request from `server/src/matching.ts`) → professionals in that county see a readiness summary → one claims it and gets
+contact details + item-level checklist → homeowner sees the professional's contact; withdrawing hides their details.
+- Migration `server/migrations/002_agent_matching.sql` (`profiles.service_counties`, `match_requests`, RLS on with no policies).
+- DB role `investor` = any subscribed professional; UI says "Professional". Renaming the role was deliberately skipped.
+- Document uploads hidden via `DOCUMENT_UPLOADS_ENABLED = false` in `src/lib/constants.ts` (code kept). Property-data
+  pages kept but out of the nav (`/investor/data`, `/investor/search`). COUNTIES/SITUATIONS duplicated in
+  `src/lib/constants.ts` and `server/src/matching.ts` — keep in sync.
+- Before launch: attorney review of consent text and the model (Civ. Code §2945 foreclosure consultants, §2944.7 advance
+  fees); verify professionals' DRE licenses (not built); no admin view of match requests yet.
+
+## Investor Portal (data features, now hidden from nav)
 
 - Subscription-gated portal for paid investors to search distressed property data
 - Data types: foreclosure NOD, foreclosure NOT, probate, tax lien, tax sale
@@ -90,15 +110,16 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 
 ## Running Locally
 
-1. Create `server/.env` from `server/.env.example` with `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
-2. Run SQL migration: `server/migrations/001_investor_portal.sql` in Supabase SQL Editor
+1. Create `server/.env` from `server/.env.example` with `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
+2. Run SQL: `supabase/schema.sql`, then `server/migrations/001_investor_portal.sql` and `002_agent_matching.sql` in the Supabase SQL Editor
 3. `cd server && npm install && npm run dev` (Express on port 3001)
 4. `npm run dev` (Vite frontend with proxy)
 
 ## Environment Files
 
 - `.env.local` — frontend Supabase URL + anon key (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
-- `server/.env` — backend Supabase URL + service role key + DATABASE_URL + PORT + Stripe keys (gitignored)
+- `server/.env` — backend Supabase URL + service role key + PORT + Stripe keys (gitignored)
+- Templates (committed): `.env.example` (frontend, incl. optional `VITE_API_URL`) and `server/.env.example` (commented, matches every `process.env.*` the server reads). Keep them in sync when adding env vars.
 
 ## Deployment
 
@@ -115,13 +136,25 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 - **Stripe webhook**: `https://sonderbe.onrender.com/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
   - Signing secret stored as `STRIPE_WEBHOOK_SECRET` in Render env vars
 
-## In Progress
+## Status (assessed 2026-06-12, updated 2026-09-24)
 
-- Direct PostgreSQL connection via `pg` Pool added to `server/src/config.ts` — connection verified and working
-- `pg` package added to `server/package.json`, Pool exported from config
-- `DATABASE_URL` uses the session mode pooler (`aws-1-us-east-1.pooler.supabase.com:5432`)
-- **Unknown**: the original purpose/task for adding direct `pg` access was lost due to a restart. The Pool is set up and connected but not yet used by any routes. The user does not recall the original intent. Next step: decide what to use it for or remove it if unnecessary.
+- **Supabase project `gfeeiyjhjapysiqxwiqi` was paused, not deleted** (free tier, inactivity). The user resumed it 2026-11-08; data and keys survived, so no env changes were needed anywhere. `001_investor_portal.sql` had never been applied — it and `002_agent_matching.sql` (which also enables RLS on 001's tables) were run that day. A resumed project takes a few minutes to answer reliably (521s, then PGRST002/PGRST205 schema-cache errors). Keep-alive: `ops/supabase_keepalive.py`, deployed to hamptonserver `~/sonderbe_keepalive/` (config there holds URL + public anon key), daily 16:15 UTC; emails after 2 failed runs and on recovery.
+- **Known schema bug:** the `profiles` policy "Admins can view all profiles" selects from `profiles` itself, so any anon/authenticated query that evaluates it (profiles, and the admin clauses on contact_submissions/checklist_progress/documents) fails with `42P17 infinite recursion`. The app is unaffected (backend uses the service role; frontend only uses Supabase Auth). Fix if the frontend ever reads tables directly: a `SECURITY DEFINER` `is_admin()` function used by those policies.
+- **Stripe checkout bug found and fixed in `server/.env`**: `STRIPE_PRICE_ID` was set to a product ID (`prod_Tsu6EoAt319qUL`) instead of a price ID — Stripe checkout rejects product IDs, so every checkout failed. Corrected to `price_1Sv8I9Hdn9u1Gfdher0BRAId` ($0/month test price on that product). The same wrong value is likely still in Render's `STRIPE_PRICE_ID` env var — fix there too.
+- Render backend (`sonderbe.onrender.com`) and Vercel frontend both still deployed and responding (Render free tier cold-starts ~20s).
+- Frontend typecheck and server build both pass.
+- **Branch `hardening-and-review-fixes` (2026-09-24, local, not pushed/merged)** holds all post-January work: `95e56a1` security/robustness hardening (in-memory token store via `src/lib/tokenStore.ts`, role caching, rate limiting, field whitelists, hash-router reset-password redirect) + review fixes; `ea03997` CI, lint cleanup, dependency updates; then `pg` removal and docs/env-example commits. `master` (last commit Jan 30) is what's deployed — merging auto-deploys both Vercel and Render, so merge after the Supabase rebuild and test together.
+- **Code review 2026-09-24** of that batch found 10 issues; 8 fixed (committed on the branch above): Stripe webhook raw-body regression, rate limiters keyed on Render proxy IP, stale role cache after checkout, AuthContext 5s timeout rendering user-without-profile during Render cold starts, eager Stripe init crashing server, admin client detail 404 for investors, PropertyForm edit loading blank (UUID sent as `search`) and able to overwrite data, signOut not clearing state on error.
+  - Still open: (7) reset-password redirect `/#/reset-password` may collide with Supabase's implicit-flow `#access_token` fragment — test with a real reset email once Supabase is rebuilt; (10) `investor.ts` /stats only checks the total count's error, per-type count failures silently show 0.
+- **CI** (`.github/workflows/ci.yml`, added 2026-09-24): on PRs and pushes to master runs `npm run lint` (root ESLint config covers `src/` and `server/src/`), frontend build (`tsc -b && vite build`), server build. Lint was cleaned to zero errors.
+  - ESLint uses `eslint-plugin-react-hooks` v7 compiler rules: `set-state-in-effect` flags synchronous setState in effects, including inside `async` functions/useCallbacks called from an effect. Pattern used: effects call a non-async fetch that sets state only in `.then/.finally`; initial `loading` is `true`; separate `reload`/`retry` functions do the `setLoading(true)`.
+- **Dependencies** (2026-09-24): `npm audit fix` in both packages + `csv-parse` 6→7 (server has 0 vulns). Remaining frontend moderates need majors, deliberately deferred: `react-router-dom` 6→7 (open-redirect advisory) and `vite` 8 (esbuild dev-server advisory, dev-only).
+- The `pg` Pool and package are removed (2026-09-24).
+- `supabase/config.toml` exists from `supabase init` (local dev was being set up); supabase CLI is not installed, Docker is available.
 - **Fixed**: `supabase.auth.getSession()` deadlocks in Supabase v2 when used alongside `onAuthStateChange`. Two fixes applied:
-  - `AuthContext.tsx`: replaced `getSession()` + `onAuthStateChange` with `onAuthStateChange`-only initialization (Supabase v2 fires `INITIAL_SESSION` event automatically)
-  - `api.ts`: replaced `getAuthHeaders()` calling `supabase.auth.getSession()` with direct `localStorage` read of the Supabase auth token (key: `sb-<project-ref>-auth-token`). No longer imports `supabase` client.
+  - `AuthContext.tsx`: replaced `getSession()` + `onAuthStateChange` with `onAuthStateChange`-only initialization (Supabase v2 fires `INITIAL_SESSION` event automatically). The handler clears the 5s fallback timeout as soon as any auth event fires, so `loading` stays true until the profile fetch finishes (don't let route guards see a user with a null profile during Render cold starts)
+  - `api.ts`: replaced `getAuthHeaders()` calling `supabase.auth.getSession()` — now superseded: auth headers come from the in-memory `src/lib/tokenStore.ts`, which `AuthContext` fills from `onAuthStateChange`. No longer imports `supabase` client.
 - **Deployment verified**: Frontend (Vercel) + Backend (Render) fully working end-to-end — auth, portal dashboard, API calls all functional
+- **Matching verified end-to-end 2026-11-08** against the real DB + local backend (26/26: consent/validation, county scoping, hidden contact before claim, atomic claim race, release/close/reopen, withdrawal hides details, role 403s, anon key blocked). User clicked through the UI locally (homeowner + professional demo logins) and approved it.
+- **Next steps (2026-09-24, updated 2026-11-08):** (1) ~~rebuild Supabase~~ done (resumed); fix Render `STRIPE_PRICE_ID`; (2) merge the branch, verify on Render (per-client `req.ip`, checkout → investor promotion, property edit, investor client detail); (3) open items 7 and 10; (4) prevent another free-tier pause/deletion (paid plan or a keep-alive ping from cron/hamptonserver).
+- Untracked in repo root: three June 2026 foreclosure research/timeline docs (`2026-06-1*-*.md/.html`) and `supabase/config.toml` + `.gitignore` — the user hasn't decided where they belong.

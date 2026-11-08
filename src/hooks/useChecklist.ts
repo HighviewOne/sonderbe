@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChecklistProgress } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { checklistData } from '../lib/constants'
@@ -13,6 +13,7 @@ export function useChecklist() {
   const [checkedItems, setCheckedItems] = useState<ChecklistState>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const inFlight = useRef(new Set<string>())
 
   const getKey = (categoryIndex: number, itemIndex: number) =>
     `${categoryIndex}-${itemIndex}`
@@ -45,13 +46,12 @@ export function useChecklist() {
     if (!user) return
 
     const key = getKey(categoryIndex, itemIndex)
+    if (inFlight.current.has(key)) return
+
     const newValue = !checkedItems[key]
+    inFlight.current.add(key)
 
-    setCheckedItems(prev => ({
-      ...prev,
-      [key]: newValue
-    }))
-
+    setCheckedItems(prev => ({ ...prev, [key]: newValue }))
     setSaving(true)
 
     try {
@@ -62,13 +62,11 @@ export function useChecklist() {
       })
     } catch (err) {
       console.error('Error saving checklist item:', err)
-      setCheckedItems(prev => ({
-        ...prev,
-        [key]: !newValue
-      }))
+      setCheckedItems(prev => ({ ...prev, [key]: !newValue }))
+    } finally {
+      inFlight.current.delete(key)
+      setSaving(false)
     }
-
-    setSaving(false)
   }
 
   const isChecked = (categoryIndex: number, itemIndex: number) =>

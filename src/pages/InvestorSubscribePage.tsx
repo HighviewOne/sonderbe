@@ -11,8 +11,8 @@ export function InvestorSubscribePage() {
     setError('')
     try {
       await createCheckout()
-    } catch (e: any) {
-      setError(e.message || 'Failed to start checkout')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to start checkout')
       setLoading(false)
     }
   }
@@ -21,21 +21,23 @@ export function InvestorSubscribePage() {
     <main className="auth-page">
       <div className="subscribe-container">
         <div className="subscribe-card">
-          <h1>Investor Portal</h1>
+          <h1>SonderBe for Real Estate Professionals</h1>
           <p className="subscribe-subtitle">
-            Access distressed property data across six Southern California counties
+            Get connected with homeowners facing foreclosure who have asked for help
           </p>
 
           <div className="subscribe-features">
             <h3>What you get:</h3>
             <ul>
-              <li>Foreclosure leads (NOD &amp; NOT)</li>
-              <li>Probate property data</li>
-              <li>Tax lien and tax sale listings</li>
+              <li>Opt-in homeowner leads in the counties you serve</li>
+              <li>Each lead is exclusive to you once you accept it</li>
+              <li>See how document-ready each homeowner is before you call</li>
               <li>Coverage: LA, Orange, Riverside, San Bernardino, San Diego, Ventura</li>
-              <li>Advanced search and filtering</li>
-              <li>Regularly updated data</li>
             </ul>
+            <p className="subscribe-note">
+              Homeowners never pay SonderBe. By subscribing you agree not to charge homeowners any
+              upfront fee for foreclosure or loan-modification help.
+            </p>
           </div>
 
           {error && <div className="error-message">{error}</div>}

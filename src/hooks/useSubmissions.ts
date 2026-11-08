@@ -18,27 +18,27 @@ export function useSubmissions() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadSubmissions = useCallback(async () => {
-    if (!user) {
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-
-    try {
-      const data = await apiGet<ContactSubmission[]>('/submissions')
-      setSubmissions(data)
-    } catch (err) {
-      console.error('Error loading submissions:', err)
-      setError('Failed to load submissions')
-    }
-    setLoading(false)
+  // Only sets state in promise callbacks, so it's safe to call from the effect.
+  // With no user, `loading` is derived as false below.
+  const fetchSubmissions = useCallback(() => {
+    if (!user) return Promise.resolve()
+    return apiGet<ContactSubmission[]>('/submissions')
+      .then(setSubmissions)
+      .catch(err => {
+        console.error('Error loading submissions:', err)
+        setError('Failed to load submissions')
+      })
+      .finally(() => setLoading(false))
   }, [user])
 
   useEffect(() => {
-    loadSubmissions()
-  }, [loadSubmissions])
+    fetchSubmissions()
+  }, [fetchSubmissions])
+
+  const loadSubmissions = useCallback(async () => {
+    setLoading(true)
+    await fetchSubmissions()
+  }, [fetchSubmissions])
 
   const submitForm = async (data: SubmissionData): Promise<boolean> => {
     setSubmitting(true)
@@ -91,7 +91,7 @@ export function useSubmissions() {
 
   return {
     submissions,
-    loading,
+    loading: user ? loading : false,
     submitting,
     error,
     submitForm,
