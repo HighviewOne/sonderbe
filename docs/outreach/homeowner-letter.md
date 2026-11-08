@@ -2,7 +2,7 @@
 
 Mailed to owners at addresses with a recorded Notice of Default (from the NOD pipeline).
 One page, plain envelope, no fake "official notice" styling, no urgency tricks.
-A Spanish version should go in the same envelope or on the back. Ask a native speaker to
+A Spanish version (`homeowner-letter-es.md`) should go in the same envelope or on the back. Ask a native speaker to
 check the translation.
 
 ---
