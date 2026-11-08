@@ -21,6 +21,8 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads
   - `/api/investor` — GET /properties (search/filter/paginate), /properties/:id, /stats, /subscription
   - `/api/stripe` — POST /create-checkout, /webhook (raw body), /portal
+  - `/api/match` — homeowner (role client): GET own request + consent text + matched professional, POST create/reopen (consent required), DELETE withdraw
+  - `/api/leads` — subscribed professional (investorOnly): GET open leads in service counties (category counts only) + own claims (contact + item-level checklist), PUT /service-area, POST /:id/claim (atomic, max 10 active), /:id/release, /:id/close
 - Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, express-rate-limit
 - Dev: tsx (watch mode), typescript
 - Stripe webhook: `app.use('/api/stripe/webhook', express.raw(...))` in `index.ts` BEFORE `express.json()` — a router-level `express.raw()` alone does NOT work (json parses first, raw skips, signature check fails). Verified with a signed test event 2026-09-24
@@ -57,7 +59,22 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 - Migration: `server/migrations/001_investor_portal.sql` (run in Supabase SQL Editor)
 - Profile roles: `'client' | 'admin' | 'investor'`
 
-## Investor Portal
+## Product direction (decided 2026-11-08)
+
+Homeowner-first matching, sold to real estate professionals (mainly short-sale agents) by subscription. Homeowners
+never pay and SonderBe does **not** hold their financial documents: the checklist tracks "have it ready" only, and the
+matched professional collects documents directly. Flow: homeowner opts in (`/portal/match`, consent wording stored per
+request from `server/src/matching.ts`) → professionals in that county see a readiness summary → one claims it and gets
+contact details + item-level checklist → homeowner sees the professional's contact; withdrawing hides their details.
+- Migration `server/migrations/002_agent_matching.sql` (`profiles.service_counties`, `match_requests`, RLS on with no policies).
+- DB role `investor` = any subscribed professional; UI says "Professional". Renaming the role was deliberately skipped.
+- Document uploads hidden via `DOCUMENT_UPLOADS_ENABLED = false` in `src/lib/constants.ts` (code kept). Property-data
+  pages kept but out of the nav (`/investor/data`, `/investor/search`). COUNTIES/SITUATIONS duplicated in
+  `src/lib/constants.ts` and `server/src/matching.ts` — keep in sync.
+- Before launch: attorney review of consent text and the model (Civ. Code §2945 foreclosure consultants, §2944.7 advance
+  fees); verify professionals' DRE licenses (not built); no admin view of match requests yet.
+
+## Investor Portal (data features, now hidden from nav)
 
 - Subscription-gated portal for paid investors to search distressed property data
 - Data types: foreclosure NOD, foreclosure NOT, probate, tax lien, tax sale
@@ -94,7 +111,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 ## Running Locally
 
 1. Create `server/.env` from `server/.env.example` with `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL`
-2. Run SQL migration: `server/migrations/001_investor_portal.sql` in Supabase SQL Editor
+2. Run SQL: `supabase/schema.sql`, then `server/migrations/001_investor_portal.sql` and `002_agent_matching.sql` in the Supabase SQL Editor
 3. `cd server && npm install && npm run dev` (Express on port 3001)
 4. `npm run dev` (Vite frontend with proxy)
 

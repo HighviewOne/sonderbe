@@ -3,28 +3,28 @@ import { useAuth } from '../../hooks/useAuth'
 import { useChecklist } from '../../hooks/useChecklist'
 import { useDocuments } from '../../hooks/useDocuments'
 import { useSubmissions } from '../../hooks/useSubmissions'
+import { useMatch } from '../../hooks/useMatch'
+import { DOCUMENT_UPLOADS_ENABLED } from '../../lib/constants'
 
 export function Dashboard() {
   const { profile } = useAuth()
   const { getTotalProgress, loading: checklistLoading } = useChecklist()
-  const { documents, loading: docsLoading } = useDocuments()
   const { submissions, loading: subsLoading } = useSubmissions()
 
   const progress = getTotalProgress()
-  const recentDocs = documents.slice(0, 3)
   const recentSubmissions = submissions.slice(0, 3)
 
   return (
     <div className="dashboard">
       <div className="dashboard-header">
         <h1>Welcome, {profile?.full_name || 'there'}!</h1>
-        <p>Track your loan modification progress and manage your documents</p>
+        <p>Get ready, then get matched with a professional who can help</p>
       </div>
 
       <div className="dashboard-grid">
         <div className="dashboard-card checklist-overview">
           <div className="card-header">
-            <h2>Document Checklist</h2>
+            <h2>Readiness Checklist</h2>
             <Link to="/portal/checklist" className="card-link">View All</Link>
           </div>
           {checklistLoading ? (
@@ -37,7 +37,7 @@ export function Dashboard() {
                 </div>
               </div>
               <p className="progress-label">
-                {progress.checked} of {progress.total} items completed
+                {progress.checked} of {progress.total} items ready
               </p>
               <Link to="/portal/checklist" className="btn btn-secondary btn-full">
                 Continue Checklist
@@ -46,37 +46,7 @@ export function Dashboard() {
           )}
         </div>
 
-        <div className="dashboard-card documents-overview">
-          <div className="card-header">
-            <h2>My Documents</h2>
-            <Link to="/portal/documents" className="card-link">View All</Link>
-          </div>
-          {docsLoading ? (
-            <p>Loading...</p>
-          ) : documents.length === 0 ? (
-            <>
-              <p className="empty-state">No documents uploaded yet</p>
-              <Link to="/portal/documents" className="btn btn-secondary btn-full">
-                Upload Documents
-              </Link>
-            </>
-          ) : (
-            <>
-              <ul className="document-list">
-                {recentDocs.map(doc => (
-                  <li key={doc.id} className="document-item">
-                    <span className="doc-icon">📄</span>
-                    <span className="doc-name">{doc.file_name}</span>
-                    <span className={`doc-status status-${doc.status}`}>{doc.status}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link to="/portal/documents" className="btn btn-secondary btn-full">
-                Manage Documents
-              </Link>
-            </>
-          )}
-        </div>
+        {DOCUMENT_UPLOADS_ENABLED ? <DocumentsCard /> : <MatchCard />}
 
         <div className="dashboard-card submissions-overview">
           <div className="card-header">
@@ -130,6 +100,75 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function MatchCard() {
+  const { request, loading } = useMatch()
+  const active = request && (request.status === 'open' || request.status === 'claimed')
+
+  return (
+    <div className="dashboard-card match-overview">
+      <div className="card-header">
+        <h2>Get Matched</h2>
+      </div>
+      {loading ? (
+        <p>Loading...</p>
+      ) : !active ? (
+        <>
+          <p className="empty-state">Connect with one real estate professional in your county. Free for homeowners.</p>
+          <Link to="/portal/match" className="btn btn-secondary btn-full">Request a Match</Link>
+        </>
+      ) : (
+        <>
+          <p>
+            {request.status === 'open'
+              ? `Request sent for ${request.county} County — waiting for a professional to accept.`
+              : 'You have been matched with a professional.'}
+          </p>
+          <Link to="/portal/match" className="btn btn-secondary btn-full">View Details</Link>
+        </>
+      )}
+    </div>
+  )
+}
+
+function DocumentsCard() {
+  const { documents, loading: docsLoading } = useDocuments()
+  const recentDocs = documents.slice(0, 3)
+
+  return (
+    <div className="dashboard-card documents-overview">
+      <div className="card-header">
+        <h2>My Documents</h2>
+        <Link to="/portal/documents" className="card-link">View All</Link>
+      </div>
+      {docsLoading ? (
+        <p>Loading...</p>
+      ) : documents.length === 0 ? (
+        <>
+          <p className="empty-state">No documents uploaded yet</p>
+          <Link to="/portal/documents" className="btn btn-secondary btn-full">
+            Upload Documents
+          </Link>
+        </>
+      ) : (
+        <>
+          <ul className="document-list">
+            {recentDocs.map(doc => (
+              <li key={doc.id} className="document-item">
+                <span className="doc-icon">📄</span>
+                <span className="doc-name">{doc.file_name}</span>
+                <span className={`doc-status status-${doc.status}`}>{doc.status}</span>
+              </li>
+            ))}
+          </ul>
+          <Link to="/portal/documents" className="btn btn-secondary btn-full">
+            Manage Documents
+          </Link>
+        </>
+      )}
     </div>
   )
 }

@@ -1,3 +1,11 @@
+// Must match COUNTIES / SITUATIONS in server/src/matching.ts
+export const COUNTIES = ['Los Angeles', 'Orange', 'Riverside', 'San Bernardino', 'San Diego', 'Ventura']
+
+// Document uploads are hidden: SonderBe tracks readiness only and does not hold
+// homeowners' financial documents. The matched professional collects them directly.
+// The upload code (DocumentUpload, /api/documents) is kept in case this changes.
+export const DOCUMENT_UPLOADS_ENABLED = false
+
 export const checklistData = [
   {
     title: "Identification & Loan Details",
@@ -206,3 +214,6 @@ export const situationOptions = [
   { value: "struggling", label: "Struggling but current" },
   { value: "other", label: "Other situation" }
 ]
+
+export const situationLabel = (value: string) =>
+  situationOptions.find(o => o.value === value)?.label ?? value

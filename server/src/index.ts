@@ -14,6 +14,8 @@ import documentsRoutes from './routes/documents.js'
 import adminRoutes from './routes/admin.js'
 import investorRoutes from './routes/investor.js'
 import stripeRoutes from './routes/stripe.js'
+import matchRoutes from './routes/match.js'
+import leadsRoutes from './routes/leads.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -52,6 +54,8 @@ app.use('/api/documents', documentsRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/investor', investorRoutes)
 app.use('/api/stripe', stripeRoutes)
+app.use('/api/match', matchRoutes)
+app.use('/api/leads', leadsRoutes)
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }))
 app.use(errorHandler)

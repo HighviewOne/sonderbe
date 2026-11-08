@@ -24,7 +24,7 @@ export function SubscriptionStatus() {
     <div className="subscription-status">
       <div className="page-header">
         <h1>Subscription</h1>
-        <p>Manage your investor portal subscription</p>
+        <p>Manage your professional portal subscription</p>
       </div>
 
       <div className="subscription-card">

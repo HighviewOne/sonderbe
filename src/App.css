@@ -2300,3 +2300,116 @@
   font-size: 0.9rem;
   color: #b91c1c;
 }
+
+/* ===== Matching (homeowner Get Matched + professional Leads) ===== */
+.get-matched .dashboard-card,
+.leads .dashboard-card {
+  margin-bottom: 20px;
+}
+
+.match-form {
+  max-width: 560px;
+}
+
+.consent-label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 16px 0;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.consent-label input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.form-note,
+.lead-meta {
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+  margin-top: 8px;
+}
+
+.match-contact {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  line-height: 1.8;
+}
+
+.county-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  margin-bottom: 12px;
+}
+
+.county-checkboxes .consent-label {
+  margin: 6px 0;
+}
+
+.lead-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.lead-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--color-white);
+}
+
+.lead-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.lead-readiness {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.lead-contact,
+.lead-categories,
+.lead-actions {
+  margin-top: 8px;
+}
+
+.lead-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lead-chip {
+  font-size: 0.8rem;
+  background: var(--color-background);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+}
+
+.lead-item details {
+  margin-top: 8px;
+}
+
+.lead-category h4 {
+  margin: 10px 0 4px;
+  font-size: 0.9rem;
+}
+
+.lead-category p {
+  margin: 2px 0;
+  font-size: 0.85rem;
+}
+
+.lead-item .btn {
+  margin-top: 8px;
+}
