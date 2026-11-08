@@ -33,9 +33,17 @@ CREATE TABLE IF NOT EXISTS match_requests (
 CREATE INDEX IF NOT EXISTS idx_match_requests_county_status ON match_requests (county, status);
 CREATE INDEX IF NOT EXISTS idx_match_requests_claimed_by ON match_requests (claimed_by);
 
+DROP TRIGGER IF EXISTS update_match_requests_updated_at ON match_requests;
 CREATE TRIGGER update_match_requests_updated_at
   BEFORE UPDATE ON match_requests
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- RLS on with no policies: only the backend (service role) can read/write this table
 ALTER TABLE match_requests ENABLE ROW LEVEL SECURITY;
+
+-- 001 created its tables without RLS, which left them readable/writable through the
+-- public anon key. The backend uses the service role (bypasses RLS), so turning RLS
+-- on with no policies closes that without affecting the app.
+ALTER TABLE investor_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE distressed_properties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE csv_uploads ENABLE ROW LEVEL SECURITY;
