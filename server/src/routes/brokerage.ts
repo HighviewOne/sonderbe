@@ -94,6 +94,7 @@ router.post('/join', asyncHandler(async (req: AuthenticatedRequest, res) => {
   const { error } = await supabaseAdmin.from('profiles').update({
     role: 'investor',
     brokerage_id: invite.brokerage_id,
+    left_brokerage_at: null,
     professional_type: me.professional_type ?? 'agent'
   }).eq('id', me.id)
   if (error) {
@@ -194,7 +195,7 @@ router.post('/', asyncHandler(async (req: AuthenticatedRequest, res) => {
     res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'You already run a brokerage' : 'Failed to create the brokerage' })
     return
   }
-  await supabaseAdmin.from('profiles').update({ brokerage_id: data.id }).eq('id', me.id)
+  await supabaseAdmin.from('profiles').update({ brokerage_id: data.id, left_brokerage_at: null }).eq('id', me.id)
   res.status(201).json(data)
 }))
 
@@ -291,7 +292,8 @@ router.delete('/agents/:id', asyncHandler(async (req: AuthenticatedRequest, res)
     res.status(400).json({ error: "You can't remove yourself" })
     return
   }
-  const { data, error } = await supabaseAdmin.from('profiles').update({ brokerage_id: null })
+  // Removed agents keep read-only access for 14 days to hand over their clients (access.ts)
+  const { data, error } = await supabaseAdmin.from('profiles').update({ brokerage_id: null, left_brokerage_at: new Date().toISOString() })
     .eq('id', id).eq('brokerage_id', owned.id).select('id').maybeSingle()
   if (error || !data) {
     res.status(error ? 500 : 404).json({ error: error ? 'Failed to remove the agent' : 'Agent not found' })
@@ -307,7 +309,7 @@ router.post('/leave', asyncHandler(async (req: AuthenticatedRequest, res) => {
     res.status(400).json({ error: 'You run this brokerage, so you cannot leave it' })
     return
   }
-  const { error } = await supabaseAdmin.from('profiles').update({ brokerage_id: null }).eq('id', req.userId!)
+  const { error } = await supabaseAdmin.from('profiles').update({ brokerage_id: null, left_brokerage_at: new Date().toISOString() }).eq('id', req.userId!)
   if (error) {
     console.error('Failed to leave brokerage:', error)
     res.status(500).json({ error: 'Failed to leave the brokerage' })
@@ -316,41 +318,53 @@ router.post('/leave', asyncHandler(async (req: AuthenticatedRequest, res) => {
   res.json({ ok: true })
 }))
 
-// GET /api/brokerage/clients — the broker's view of every active client across the team
+// GET /api/brokerage/clients — the broker's team overview: counts per agent, never homeowner names
+// or details. Homeowners consented to share with the one professional they chose, not the brokerage.
 router.get('/clients', asyncHandler(async (req: AuthenticatedRequest, res) => {
   const owned = await requireOwner(req, res)
   if (!owned) return
-  const { data: team, error: teamError } = await supabaseAdmin.from('profiles').select('id, full_name').eq('brokerage_id', owned.id)
+  const { data: team, error: teamError } = await supabaseAdmin.from('profiles')
+    .select('id, full_name, email').eq('brokerage_id', owned.id).order('full_name')
   if (teamError) {
     console.error('Failed to load team:', teamError)
     res.status(500).json({ error: 'Failed to load team clients' })
     return
   }
-  const names = new Map(team.map(t => [t.id, t.full_name]))
   if (team.length === 0) {
-    res.json({ clients: [] })
+    res.json({ agents: [] })
     return
   }
   const { data: cases, error } = await supabaseAdmin.from('match_requests')
-    .select('id, claimed_by, contact_name, county, situation, stage, next_step, stage_updated_at, claimed_at')
-    .in('claimed_by', team.map(t => t.id)).eq('status', 'claimed').order('stage_updated_at', { ascending: false })
+    .select('id, claimed_by, stage').in('claimed_by', team.map(t => t.id)).eq('status', 'claimed')
   if (error) {
     console.error('Failed to load team clients:', error)
     res.status(500).json({ error: 'Failed to load team clients' })
     return
   }
-  const { data: docs } = cases.length
-    ? await supabaseAdmin.from('case_documents').select('match_request_id, received_at').in('match_request_id', cases.map(c => c.id))
-    : { data: [] as { match_request_id: string; received_at: string | null }[] }
+  const { data: docs, error: docError } = cases.length
+    ? await supabaseAdmin.from('case_documents').select('match_request_id, sent_at, received_at').in('match_request_id', cases.map(c => c.id))
+    : { data: [] as { match_request_id: string; sent_at: string | null; received_at: string | null }[], error: null }
+  if (docError) {
+    console.error('Failed to load team documents:', docError)
+    res.status(500).json({ error: 'Failed to load team clients' })
+    return
+  }
+  const ownerOfCase = new Map(cases.map(c => [c.id, c.claimed_by as string]))
   res.json({
-    clients: cases.map(({ claimed_by, ...c }) => {
-      const mine = (docs ?? []).filter(d => d.match_request_id === c.id)
+    agents: team.map(t => {
+      const mine = cases.filter(c => c.claimed_by === t.id)
+      const myDocs = (docs ?? []).filter(d => ownerOfCase.get(d.match_request_id) === t.id)
+      const by_stage: Record<string, number> = {}
+      for (const c of mine) by_stage[c.stage] = (by_stage[c.stage] ?? 0) + 1
       return {
-        ...c,
-        agent_name: names.get(claimed_by) ?? 'Agent',
-        agent_is_me: claimed_by === req.userId,
-        documents_total: mine.length,
-        documents_received: mine.filter(d => d.received_at).length
+        agent_id: t.id,
+        agent_name: t.full_name || t.email,
+        agent_is_me: t.id === req.userId,
+        clients: mine.length,
+        by_stage,
+        documents_total: myDocs.length,
+        documents_to_review: myDocs.filter(d => d.sent_at && !d.received_at).length,
+        documents_received: myDocs.filter(d => d.received_at).length
       }
     })
   })

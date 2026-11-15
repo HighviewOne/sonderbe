@@ -118,7 +118,7 @@ export async function caseDetails(requests: { id: string; homeowner_id: string }
   return result
 }
 
-export async function addCaseEvent(matchRequestId: string, stage: string, note: string | null, createdBy: string) {
+export async function addCaseEvent(matchRequestId: string, stage: string, note: string | null, createdBy: string | null) {
   const { error } = await supabaseAdmin
     .from('case_events')
     .insert({ match_request_id: matchRequestId, stage, note, created_by: createdBy })

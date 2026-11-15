@@ -43,33 +43,43 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
       else {
         r.status = 'closed'
         r.closed_reason = 'professional_inactive'
-        await addCaseEvent(r.id, r.stage, 'Your professional is no longer on SonderBe, so this case was closed. You can choose someone new.', r.homeowner_id)
+        // Written by SonderBe, not by either side
+        await addCaseEvent(r.id, r.stage, 'Your professional is no longer on SonderBe, so this case was closed. You can choose someone new.', null)
       }
     }
   }
 
   const active = requests.filter(r => r.status === 'claimed' && r.claimed_by)
-  const [details, contacts] = await Promise.all([
+  const proIds = [...new Set(active.map(r => r.claimed_by as string))]
+  // One query each for every case's professional, not one set per case
+  const [details, contacts, profiles, listings] = await Promise.all([
     caseDetails(active.map(r => ({ id: r.id, homeowner_id: r.homeowner_id }))),
-    professionalContact(active.map(r => r.claimed_by as string))
+    professionalContact(proIds),
+    proIds.length
+      ? supabaseAdmin.from('profiles')
+          .select('id, full_name, email, phone, business_name, professional_type, website, license_number, license_verified, avatar_url')
+          .in('id', proIds)
+      : Promise.resolve({ data: [], error: null }),
+    proIds.length ? listedProfessionals({ ids: proIds }) : Promise.resolve([])
   ])
   if (details === null) {
     res.status(500).json({ error: 'Failed to fetch your cases' })
     return
   }
+  if (profiles.error) console.error('Failed to fetch matched professionals:', profiles.error)
+  const profileOf = new Map((profiles.data ?? []).map(p => [p.id as string, p]))
+  const listingOf = new Map((listings ?? []).map(l => [l.id, l]))
 
-  const cases = await Promise.all(requests.map(async (r) => {
+  const cases = requests.map(r => {
     let professional = null
     if (r.status === 'claimed' && r.claimed_by) {
-      const [{ data: contact, error: proError }, listing] = await Promise.all([
-        supabaseAdmin.from('profiles')
-          .select('full_name, email, phone, business_name, professional_type, website, license_number, license_verified, avatar_url')
-          .eq('id', r.claimed_by).maybeSingle(),
-        listedProfessionals({ id: r.claimed_by })
-      ])
-      if (proError) console.error('Failed to fetch matched professional:', proError)
+      const profile = profileOf.get(r.claimed_by)
       // Contact details come from the profile even if the listing was since unpublished
-      professional = contact ? { ...(listing?.[0] ?? {}), ...contact, office: contacts.get(r.claimed_by) ?? null } : null
+      if (profile) {
+        const contact = { ...profile } as Partial<typeof profile>
+        delete contact.id
+        professional = { ...(listingOf.get(r.claimed_by) ?? {}), ...contact, office: contacts.get(r.claimed_by) ?? null }
+      }
     }
     const publicRequest = { ...r } as Partial<typeof r>
     delete publicRequest.claimed_by
@@ -89,7 +99,7 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
       unread_notes: notes.filter(n => n.author_role === 'professional' &&
         (!r.homeowner_notes_read_at || n.created_at > r.homeowner_notes_read_at)).length
     }
-  }))
+  })
 
   res.json({ cases, consent_text: CHOSEN_CONSENT_TEXT })
 }))
@@ -157,7 +167,7 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
   const category = CATEGORY_OF[pro.professional_type]
   const [{ data: profile, error: profileError }, { data: existing, error: existingError }] = await Promise.all([
     supabaseAdmin.from('profiles').select('email').eq('id', req.userId!).single(),
-    supabaseAdmin.from('match_requests').select('id, status, claimed_by').eq('homeowner_id', req.userId!).eq('category', category).maybeSingle()
+    supabaseAdmin.from('match_requests').select('*').eq('homeowner_id', req.userId!).eq('category', category).maybeSingle()
   ])
   if (profileError || !profile || existingError) {
     console.error('Failed to prepare match request:', profileError || existingError)
@@ -204,24 +214,10 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
     professional_notes_read_at: null
   }
 
-  // A new professional starts a fresh case. The document list carries over (reset to "to send")
-  // so nobody retypes it; the timeline, notes and document history were with the previous
-  // professional and are removed.
-  if (existing) {
-    await Promise.all([
-      supabaseAdmin.from('case_events').delete().eq('match_request_id', existing.id),
-      supabaseAdmin.from('case_notes').delete().eq('match_request_id', existing.id),
-      supabaseAdmin.from('case_document_history').delete().eq('match_request_id', existing.id),
-      supabaseAdmin.from('case_documents').update({
-        sent_at: null, received_at: null, homeowner_note: null, round: 1, request_reason: null, last_received_at: null, due_date: null
-      }).eq('match_request_id', existing.id)
-    ])
-  }
-
   // The status filter on the update keeps a concurrent pick from being overwritten
   const query = existing
     ? (replacingInactive
-        ? supabaseAdmin.from('match_requests').update(row).eq('id', existing.id).eq('claimed_by', existing.claimed_by!)
+        ? supabaseAdmin.from('match_requests').update(row).eq('id', existing.id).eq('claimed_by', existing.claimed_by!).eq('status', 'claimed')
         : supabaseAdmin.from('match_requests').update(row).eq('id', existing.id).neq('status', 'claimed'))
     : supabaseAdmin.from('match_requests').insert(row)
   const { data, error } = await query.select('id, category, county, situation, status, stage, created_at').maybeSingle()
@@ -235,9 +231,45 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
     res.status(409).json({ error: 'You already have a professional. Refresh to see their details.' })
     return
   }
+
+  // Two homeowners choosing the same professional at once can both pass the "accepting" check.
+  // Afterwards, the earliest MAX_ACTIVE_CLAIMS cases keep their place; a later one is undone.
+  const { data: held, error: heldError } = await supabaseAdmin.from('match_requests').select('id')
+    .eq('claimed_by', pro.id).eq('status', 'claimed').order('claimed_at').order('id').limit(MAX_ACTIVE_CLAIMS + 50)
+  if (heldError) console.error('Failed to recheck client limit:', heldError)
+  else if (held.findIndex(h => h.id === data.id) >= MAX_ACTIVE_CLAIMS) {
+    const { error: undoError } = existing
+      ? await supabaseAdmin.from('match_requests').update(restorable(existing)).eq('id', existing.id)
+      : await supabaseAdmin.from('match_requests').delete().eq('id', data.id)
+    if (undoError) console.error('Failed to undo over-limit pick:', undoError)
+    res.status(409).json({ error: `This professional has ${MAX_ACTIVE_CLAIMS} active clients and isn't taking new ones right now` })
+    return
+  }
+
+  // Only now that the change is saved: a new professional starts a fresh case. The document list
+  // carries over (reset to "to send") so nobody retypes it; the timeline, notes and document history
+  // were with the previous professional and are removed.
+  if (existing) {
+    const results = await Promise.all([
+      supabaseAdmin.from('case_events').delete().eq('match_request_id', existing.id),
+      supabaseAdmin.from('case_notes').delete().eq('match_request_id', existing.id),
+      supabaseAdmin.from('case_document_history').delete().eq('match_request_id', existing.id),
+      supabaseAdmin.from('case_documents').update({
+        sent_at: null, received_at: null, homeowner_note: null, round: 1, request_reason: null, last_received_at: null, due_date: null
+      }).eq('match_request_id', existing.id)
+    ])
+    for (const r of results) if (r.error) console.error('Failed to clear previous professional\'s case data:', r.error)
+  }
   await addCaseEvent(data.id, 'matched', `You chose ${pro.full_name || pro.business_name}.`, req.userId!)
   res.status(existing ? 200 : 201).json(data)
 }))
+
+// The columns POST /api/match overwrites, as they were, for undoing an over-limit pick
+function restorable(previous: Record<string, unknown>) {
+  const copy = { ...previous }
+  for (const k of ['id', 'homeowner_id', 'created_at']) delete copy[k]
+  return copy
+}
 
 // PATCH /api/match/documents/:docId — homeowner marks a requested document sent (or not)
 router.patch('/documents/:docId', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {

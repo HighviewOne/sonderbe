@@ -107,6 +107,13 @@ s, d = call('GET', f'{API}/admin/ads', admin)
 check('admin lists ads', s == 200 and len(d['ads']) == 5)
 s, _ = call('GET', f'{API}/admin/ads', maria)
 check('non-admin blocked', s == 403)
+s, _ = call('DELETE', f'{API}/admin/ads/not-a-uuid', admin)
+check('bad ad id is "not found", not a server error', s == 404, s)
+s, _ = call('POST', f'{API}/admin/ads/not-a-uuid/report-link', admin)
+check('bad ad id on report link is "not found"', s == 404, s)
+s, d = call('POST', f'{API}/admin/ads', admin, {'business_name': 'Long Site Movers', 'category': 'storage', 'headline': 'Storage near you',
+                                               'website': 'https://example.com/' + 'a' * 300})
+check('too-long website is rejected, not cut off', s == 400 and 'website' in d.get('error', ''), d)
 base = {'business_name': 'Test Movers', 'category': 'movers', 'headline': 'Fast local moves', 'counties': ['Orange'], 'active': True}
 s, d = call('POST', f'{API}/admin/ads', admin, base)
 check('mover without Cal-T cannot go live', s == 400 and 'Cal-T' in d['error'])

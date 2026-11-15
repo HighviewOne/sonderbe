@@ -35,7 +35,7 @@ export type DirectoryEntry = {
 
 // Professionals who are listed, have a type and pledge, and hold an active subscription.
 // Returns null on a database error.
-export async function listedProfessionals(filter: { county?: string; type?: string; id?: string }): Promise<DirectoryEntry[] | null> {
+export async function listedProfessionals(filter: { county?: string; type?: string; id?: string; ids?: string[] }): Promise<DirectoryEntry[] | null> {
   let query = supabaseAdmin
     .from('profiles')
     .select('id, full_name, email, phone, business_name, professional_type, bio, website, license_number, license_verified, service_counties, avatar_url, brokerage_id')
@@ -46,6 +46,7 @@ export async function listedProfessionals(filter: { county?: string; type?: stri
   if (filter.county) query = query.contains('service_counties', [filter.county])
   if (filter.type) query = query.eq('professional_type', filter.type)
   if (filter.id) query = query.eq('id', filter.id)
+  if (filter.ids) query = query.in('id', filter.ids)
 
   const { data: pros, error } = await query
   if (error) {

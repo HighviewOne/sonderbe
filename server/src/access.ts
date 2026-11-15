@@ -4,7 +4,8 @@ import { supabaseAdmin } from './config.js'
 // - active:    paying (or trialing)
 // - grace:     a payment failed less than GRACE_DAYS ago; full access while Stripe retries
 // - read_only: subscription ended (or payment failing past the grace period) less than
-//              READ_ONLY_DAYS ago; can look but not change anything, hidden from the directory
+//              READ_ONLY_DAYS ago; can look but not change anything, hidden from the directory.
+//              Also an agent who left their brokerage (left_brokerage_at) without their own subscription.
 // - ended:     past read-only; their open cases get closed for the homeowner
 // - none:      never subscribed
 export type AccessState = 'active' | 'grace' | 'read_only' | 'ended' | 'none'
@@ -34,11 +35,26 @@ export function stateOf(sub: SubRow | undefined, now = Date.now()): { state: Acc
   return { state: 'none', until: null }
 }
 
+// When a subscription that stops after a payment failure "ended": at the end of the grace period
+// (not when Stripe finally gives up), so grace + read-only never adds up to more than 28 days.
+export function endedAtFor(existingEndedAt: string | null, pastDueSince: string | null, now = Date.now()): string {
+  if (existingEndedAt) return existingEndedAt
+  if (pastDueSince) return new Date(Math.min(now, new Date(pastDueSince).getTime() + GRACE_DAYS * DAY)).toISOString()
+  return new Date(now).toISOString()
+}
+
+// Read-only period for an agent who left (or was removed from) a brokerage
+function afterLeaving(leftAt: string | null, now = Date.now()): { state: AccessState; until: string | null } {
+  if (!leftAt) return { state: 'none', until: null }
+  const end = new Date(leftAt).getTime() + READ_ONLY_DAYS * DAY
+  return now < end ? { state: 'read_only', until: new Date(end).toISOString() } : { state: 'ended', until: null }
+}
+
 // Access for each professional id. Returns null on a DB error.
 export async function accessFor(ids: string[]): Promise<Map<string, Access> | null> {
   const result = new Map<string, Access>()
   if (ids.length === 0) return result
-  const { data: profiles, error } = await supabaseAdmin.from('profiles').select('id, brokerage_id').in('id', ids)
+  const { data: profiles, error } = await supabaseAdmin.from('profiles').select('id, brokerage_id, left_brokerage_at').in('id', ids)
   if (error) {
     console.error('Failed to load profiles for access check:', error)
     return null
@@ -61,7 +77,9 @@ export async function accessFor(ids: string[]): Promise<Map<string, Access> | nu
   }
   const subOf = new Map(subs.map(s => [s.user_id, s as SubRow]))
   for (const p of profiles) {
-    const own = stateOf(subOf.get(p.id))
+    const ownSub = stateOf(subOf.get(p.id))
+    const left = p.brokerage_id ? { state: 'none' as AccessState, until: null } : afterLeaving(p.left_brokerage_at)
+    const own = RANK[left.state] > RANK[ownSub.state] ? left : ownSub
     const owner = p.brokerage_id ? ownerOf.get(p.brokerage_id) : undefined
     const viaBroker = owner && owner !== p.id ? stateOf(subOf.get(owner)) : { state: 'none' as AccessState, until: null }
     const best = RANK[viaBroker.state] > RANK[own.state]

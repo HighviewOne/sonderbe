@@ -150,11 +150,33 @@ s, d = call('GET', f'{API}/brokerage', broker)
 newid = next(a['id'] for a in d['agents'] if a['email'] == 'join.test@example.com')
 s, _ = call('DELETE', f'{API}/brokerage/agents/{newid}', broker)
 s, _ = call('GET', f'{API}/leads', jt)
-check('removed agent loses access', s == 403)
+check('removed agent keeps 14 days of read-only access', s == 200, s)
+s, d = call('PUT', f'{API}/leads/service-area', jt, {'counties': ['Orange']})
+check('removed agent cannot change anything', s == 402 and d.get('code') == 'read_only', d)
+s, d = call('GET', f'{API}/account/access', jt)
+check('removed agent access is read_only with an end date', s == 200 and d.get('state') == 'read_only' and d.get('until'), d)
 s, d = call('GET', f'{API}/brokerage/clients', broker)
-check('broker team view lists team clients', s == 200 and any(c['contact_name'] == 'Michael Nguyen' and c['agent_is_me'] for c in d['clients']), d)
+me_row = next((a for a in d.get('agents', []) if a['agent_is_me']), None) if s == 200 else None
+check('broker team view gives per-agent counts', me_row is not None and me_row['clients'] >= 1, d)
+check('broker team view has no homeowner details', s == 200 and 'Michael Nguyen' not in json.dumps(d) and 'clients' not in d, d)
 s, _ = call('GET', f'{API}/brokerage/clients', priya)
 check('member cannot see team clients', s == 403)
+
+# --- Privacy rules from the code review
+s, d = call('GET', f'{API}/leads', agent)
+some_case = (d.get('mine') or [{}])[0].get('id') if s == 200 else None
+check('agent has an active case to test with', bool(some_case))
+if some_case:
+    s, _ = call('POST', f'{API}/leads/{some_case}/release', agent)
+    check('release route is gone (cases never go back to a pool)', s == 404, s)
+s, listing = call('GET', f'{API}/leads/profile', agent)
+body = {k: listing.get(k) for k in ['business_name', 'bio', 'website', 'license_number', 'listed']}
+body.update(pledge=bool(listing.get('no_upfront_fee_pledged_at')), professional_type='negotiator')
+s, d = call('PUT', f'{API}/leads/profile', agent, body)
+check('type change blocked while professional has active clients', s == 409 and d.get('code') == 'type_locked', d)
+body['professional_type'] = listing['professional_type']
+s, _ = call('PUT', f'{API}/leads/profile', agent, body)
+check('same type still saves', s == 200, s)
 
 # --- Images
 body, ct = multipart('file', 'me.png', png1x1(), 'image/png')

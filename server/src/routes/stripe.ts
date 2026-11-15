@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../config.js'
 import { requireAuth, invalidateRoleCache } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
+import { endedAtFor } from '../access.js'
 
 const router = Router()
 
@@ -158,10 +159,12 @@ router.post('/webhook', asyncHandler(async (req, res) => {
           .single()
 
         if (sub) {
+          // 'unpaid' = Stripe stopped retrying: treat as ended. 'incomplete' / 'incomplete_expired'
+          // = the first payment never went through: 'inactive' with no end date (never had access).
           const status = subscriptionObj.status === 'active' ? 'active'
             : subscriptionObj.status === 'past_due' ? 'past_due'
             : subscriptionObj.status === 'trialing' ? 'trialing'
-            : subscriptionObj.status === 'canceled' ? 'canceled'
+            : subscriptionObj.status === 'canceled' || subscriptionObj.status === 'unpaid' ? 'canceled'
             : 'inactive'
           const now = new Date().toISOString()
 
@@ -174,7 +177,9 @@ router.post('/webhook', asyncHandler(async (req, res) => {
               current_period_start: new Date(subscriptionObj.current_period_start * 1000).toISOString(),
               current_period_end: new Date(subscriptionObj.current_period_end * 1000).toISOString(),
               past_due_since: status === 'past_due' ? (sub.past_due_since ?? now) : null,
-              ended_at: status === 'canceled' || status === 'inactive' ? (sub.ended_at ?? now) : null,
+              // Keep the first end date; an ended subscription's clock never restarts
+              ended_at: status === 'canceled' ? endedAtFor(sub.ended_at, sub.past_due_since)
+                : status === 'inactive' ? sub.ended_at : null,
               updated_at: now
             })
             .eq('stripe_customer_id', customerId)
@@ -188,15 +193,22 @@ router.post('/webhook', asyncHandler(async (req, res) => {
 
         const { data: sub } = await supabaseAdmin
           .from('investor_subscriptions')
-          .select('user_id, ended_at')
+          .select('user_id, status, ended_at, past_due_since, current_period_start')
           .eq('stripe_customer_id', customerId)
           .single()
 
         if (sub) {
           const now = new Date().toISOString()
+          // A subscription that never got a first payment never had access: no read-only period
+          const neverPaid = sub.status === 'inactive' && !sub.ended_at && !sub.current_period_start
           await supabaseAdmin
             .from('investor_subscriptions')
-            .update({ status: 'canceled', ended_at: sub.ended_at ?? now, past_due_since: null, updated_at: now })
+            .update({
+              status: 'canceled',
+              ended_at: neverPaid ? null : endedAtFor(sub.ended_at, sub.past_due_since),
+              past_due_since: null,
+              updated_at: now
+            })
             .eq('stripe_customer_id', customerId)
         }
         break

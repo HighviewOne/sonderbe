@@ -11,9 +11,10 @@ type Brokerage = { id: string; owner_id: string; name: string; website: string |
 type Agent = { id: string; full_name: string | null; email: string; professional_type: string | null; avatar_url: string | null; listed: boolean }
 type Invite = { id: string; email: string; token: string; created_at: string }
 type BrokerageResponse = { role: 'owner' | 'member' | null; brokerage: Brokerage | null; agents: Agent[]; invites: Invite[]; can_create: boolean }
-type TeamClient = {
-  id: string; contact_name: string; county: string; stage: string; next_step: string | null; stage_updated_at: string | null
-  agent_name: string; agent_is_me: boolean; documents_total: number; documents_received: number
+// Counts only: homeowners share with the agent they chose, not the brokerage
+type TeamAgent = {
+  agent_id: string; agent_name: string; agent_is_me: boolean; clients: number; by_stage: Record<string, number>
+  documents_total: number; documents_to_review: number; documents_received: number
 }
 
 const inviteLink = (token: string) => `${window.location.origin}${window.location.pathname}#/join/${token}`
@@ -177,11 +178,11 @@ function OwnerView({ data, brokerage, reload }: { data: BrokerageResponse; broke
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
-  const [clients, setClients] = useState<TeamClient[] | null>(null)
+  const [team, setTeam] = useState<TeamAgent[] | null>(null)
 
   useEffect(() => {
-    apiGet<{ clients: TeamClient[] }>('/brokerage/clients')
-      .then(res => setClients(res.clients))
+    apiGet<{ agents: TeamAgent[] }>('/brokerage/clients')
+      .then(res => setTeam(res.agents))
       .catch(err => console.error('Error loading team clients:', err))
   }, [])
 
@@ -271,22 +272,31 @@ function OwnerView({ data, brokerage, reload }: { data: BrokerageResponse; broke
 
       <div className="dashboard-card">
         <div className="card-header"><h2>Team clients</h2></div>
-        {clients === null ? <p>Loading...</p> : clients.length === 0 ? (
+        <p className="form-note">
+          Totals for each agent. Homeowners share their details only with the agent they chose, so names and case
+          details stay with that agent.
+        </p>
+        {team === null ? <p>Loading...</p> : team.every(a => a.clients === 0) ? (
           <p className="empty-state">No active clients across your team yet.</p>
         ) : (
           <div className="table-scroll">
             <table className="team-table">
               <thead>
-                <tr><th>Homeowner</th><th>Agent</th><th>Stage</th><th>Documents</th><th>Updated</th></tr>
+                <tr><th>Agent</th><th>Active clients</th><th>Stages</th><th>Documents</th></tr>
               </thead>
               <tbody>
-                {clients.map(c => (
-                  <tr key={c.id}>
-                    <td>{c.contact_name}<div className="pro-subtitle">{c.county}</div></td>
-                    <td>{c.agent_is_me ? 'You' : c.agent_name}</td>
-                    <td>{stageLabel(c.stage)}{c.next_step && <div className="pro-subtitle">{c.next_step}</div>}</td>
-                    <td>{c.documents_received}/{c.documents_total}</td>
-                    <td>{c.stage_updated_at ? formatDate(c.stage_updated_at) : '—'}</td>
+                {team.map(a => (
+                  <tr key={a.agent_id}>
+                    <td>{a.agent_is_me ? `${a.agent_name} (you)` : a.agent_name}</td>
+                    <td>{a.clients}</td>
+                    <td>
+                      {Object.keys(a.by_stage).length === 0 ? '—' : Object.entries(a.by_stage)
+                        .map(([stage, n]) => `${stageLabel(stage)}: ${n}`).join(' · ')}
+                    </td>
+                    <td>
+                      {a.documents_received}/{a.documents_total} received
+                      {a.documents_to_review > 0 && <div className="pro-subtitle">{a.documents_to_review} to review</div>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

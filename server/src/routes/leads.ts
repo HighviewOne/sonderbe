@@ -187,7 +187,7 @@ router.post('/:id/claim', asyncHandler(async (req: AuthenticatedRequest, res) =>
     return
   }
   if ((count ?? 0) >= MAX_ACTIVE_CLAIMS) {
-    res.status(409).json({ error: `You can hold up to ${MAX_ACTIVE_CLAIMS} active leads. Close or release one first.` })
+    res.status(409).json({ error: `You can hold up to ${MAX_ACTIVE_CLAIMS} active leads. Close one first.` })
     return
   }
 
@@ -213,41 +213,36 @@ router.post('/:id/claim', asyncHandler(async (req: AuthenticatedRequest, res) =>
   res.json(data)
 }))
 
-// POST /api/leads/:id/release — give a claimed request back to the open pool
-// POST /api/leads/:id/close   — mark my claimed request as finished
-for (const [action, nextStatus] of [['release', 'open'], ['close', 'closed']] as const) {
-  router.post(`/:id/${action}`, asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const id = String(req.params.id)
-    if (!UUID_RE.test(id)) {
-      res.status(400).json({ error: 'Invalid lead id' })
-      return
-    }
+// POST /api/leads/:id/close — mark my claimed request as finished.
+// There is deliberately no "release": the homeowner consented to share with the one professional
+// they chose, so a case is never handed back to an open pool for someone else to pick up.
+router.post('/:id/close', asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const id = String(req.params.id)
+  if (!UUID_RE.test(id)) {
+    res.status(400).json({ error: 'Invalid lead id' })
+    return
+  }
 
-    const update = nextStatus === 'open'
-      ? { status: 'open', claimed_by: null, claimed_at: null }
-      : { status: 'closed' }
+  const { data, error } = await supabaseAdmin
+    .from('match_requests')
+    .update({ status: 'closed' })
+    .eq('id', id)
+    .eq('claimed_by', req.userId!)
+    .eq('status', 'claimed')
+    .select('id, status')
+    .maybeSingle()
 
-    const { data, error } = await supabaseAdmin
-      .from('match_requests')
-      .update(update)
-      .eq('id', id)
-      .eq('claimed_by', req.userId!)
-      .eq('status', 'claimed')
-      .select('id, status')
-      .maybeSingle()
-
-    if (error) {
-      console.error(`Failed to ${action} lead:`, error)
-      res.status(500).json({ error: `Failed to ${action} lead` })
-      return
-    }
-    if (!data) {
-      res.status(404).json({ error: 'No active claim on this lead' })
-      return
-    }
-    res.json(data)
-  }))
-}
+  if (error) {
+    console.error('Failed to close lead:', error)
+    res.status(500).json({ error: 'Failed to close lead' })
+    return
+  }
+  if (!data) {
+    res.status(404).json({ error: 'No active claim on this lead' })
+    return
+  }
+  res.json(data)
+}))
 
 // ---------------------------------------------------------------------------
 // My directory listing
@@ -312,6 +307,24 @@ router.put('/profile', asyncHandler(async (req: AuthenticatedRequest, res) => {
   if (listed && !pledge) {
     res.status(400).json({ error: 'You must agree to the no-upfront-fee pledge to be listed' })
     return
+  }
+  // Homeowners chose this professional as a particular kind (e.g. an agent, not an attorney).
+  // Switching type mid-case would change what they agreed to share with, so finish those cases first.
+  if (professional_type !== current.professional_type) {
+    const { count, error: countError } = await supabaseAdmin.from('match_requests')
+      .select('id', { count: 'exact', head: true }).eq('claimed_by', req.userId!).eq('status', 'claimed')
+    if (countError) {
+      console.error('Failed to count active cases:', countError)
+      res.status(500).json({ error: 'Failed to save your listing' })
+      return
+    }
+    if ((count ?? 0) > 0) {
+      res.status(409).json({
+        error: `You have ${count} active client${count === 1 ? '' : 's'}. Close those cases before changing what kind of professional you are.`,
+        code: 'type_locked'
+      })
+      return
+    }
   }
 
   const newLicense = license_number?.trim() || null
@@ -553,25 +566,28 @@ async function requestAgain(caseId: string, docIds: string[], reason: string | n
     console.error('Failed to load documents to request again:', error)
     return null
   }
-  const updated = []
-  for (const d of docs) {
-    const { data, error: upError } = await supabaseAdmin.from('case_documents').update({
-      round: d.round + 1,
-      sent_at: null,
-      received_at: null,
-      homeowner_note: null,
-      request_reason: reason,
-      last_received_at: d.received_at ?? d.last_received_at
-    }).eq('id', d.id).eq('round', d.round).select(DOC_FIELDS).maybeSingle()
-    if (upError) {
-      console.error('Failed to request document again:', upError)
-      return null
-    }
-    if (data) {
-      updated.push(presentDocument(data))
-      await addDocHistory(d.id, caseId, data.round, 'requested_again', actorId, reason)
-    }
+  // One conditional update per document (each guarded by its own round), all at once
+  const results = await Promise.all(docs.map(d => supabaseAdmin.from('case_documents').update({
+    round: d.round + 1,
+    sent_at: null,
+    received_at: null,
+    homeowner_note: null,
+    request_reason: reason,
+    last_received_at: d.received_at ?? d.last_received_at
+  }).eq('id', d.id).eq('round', d.round).select(DOC_FIELDS).maybeSingle()))
+  const failed = results.find(r => r.error)
+  if (failed) {
+    console.error('Failed to request document again:', failed.error)
+    return null
   }
+  const rows = results.map(r => r.data).filter((d): d is NonNullable<typeof d> => Boolean(d))
+  if (rows.length) {
+    const { error: historyError } = await supabaseAdmin.from('case_document_history').insert(rows.map(d => ({
+      document_id: d.id, match_request_id: caseId, round: d.round, action: 'requested_again', actor_id: actorId, reason
+    })))
+    if (historyError) console.error('Failed to record document history:', historyError)
+  }
+  const updated = rows.map(presentDocument)
   return updated
 }
 

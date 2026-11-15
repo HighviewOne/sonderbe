@@ -5,6 +5,8 @@ import { requireAuth } from '../middleware/auth.js'
 import { adminOnly } from '../middleware/adminOnly.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest, Profile, Document, DistressedProperty, County, LeadType } from '../types.js'
+import { COUNTIES } from '../matching.js'
+import { UUID_RE } from '../cases.js'
 import multer from 'multer'
 import { parse } from 'csv-parse/sync'
 
@@ -451,37 +453,40 @@ router.get('/csv-uploads', asyncHandler(async (_req, res) => {
 // ---------------------------------------------------------------------------
 const AD_ADMIN_FIELDS = 'id, business_name, category, headline, description, phone, website, license_label, license_number, counties, active, starts_on, ends_on, view_count, click_count, contact_name, contact_email, monthly_price, internal_notes, report_token, created_at, updated_at'
 const AD_CATEGORIES = ['movers', 'storage', 'cleaning', 'rental_housing', 'other']
-const AD_COUNTIES = ['Los Angeles', 'Orange', 'Riverside', 'San Bernardino', 'San Diego', 'Ventura']
 // Ads homeowners must never see on a foreclosure site
 const BLOCKED_AD_WORDS = /\b(loan|refinanc|debt relief|we buy houses|cash for (your )?home|stop (your )?foreclosure|credit repair)/i
 
 function adInput(b: Record<string, unknown>): { error: string } | { row: Record<string, unknown> } {
-  const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max + 1) : null)
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
   const row: Record<string, unknown> = {
-    business_name: str(b.business_name, 120),
+    business_name: str(b.business_name),
     category: b.category,
-    headline: str(b.headline, 120),
-    description: str(b.description, 500),
-    phone: str(b.phone, 30),
-    website: str(b.website, 200),
-    license_label: str(b.license_label, 30),
-    license_number: str(b.license_number, 40),
+    headline: str(b.headline),
+    description: str(b.description),
+    phone: str(b.phone),
+    website: str(b.website),
+    license_label: str(b.license_label),
+    license_number: str(b.license_number),
     counties: Array.isArray(b.counties) ? [...new Set(b.counties)] : [],
     active: b.active === true,
     starts_on: b.starts_on || null,
     ends_on: b.ends_on || null,
-    contact_name: str(b.contact_name, 120),
-    contact_email: str(b.contact_email, 254),
+    contact_name: str(b.contact_name),
+    contact_email: str(b.contact_email),
     monthly_price: b.monthly_price === '' || b.monthly_price === null || b.monthly_price === undefined ? null : Number(b.monthly_price),
-    internal_notes: str(b.internal_notes, 2000)
+    internal_notes: str(b.internal_notes)
   }
   if (!row.business_name) return { error: 'Business name is required' }
   if (!row.headline) return { error: 'Headline is required' }
-  for (const [k, max] of [['business_name', 120], ['headline', 120], ['description', 500], ['internal_notes', 2000]] as const) {
+  // Too long = an error, never silently cut off
+  for (const [k, max] of [
+    ['business_name', 120], ['headline', 120], ['description', 500], ['phone', 30], ['website', 200], ['license_label', 30],
+    ['license_number', 40], ['contact_name', 120], ['contact_email', 254], ['internal_notes', 2000]
+  ] as const) {
     if (typeof row[k] === 'string' && (row[k] as string).length > max) return { error: `${k.replace(/_/g, ' ')} is too long (${max} max)` }
   }
   if (typeof row.category !== 'string' || !AD_CATEGORIES.includes(row.category)) return { error: 'Choose a category' }
-  if ((row.counties as unknown[]).some(c => typeof c !== 'string' || !AD_COUNTIES.includes(c))) return { error: 'Unknown county' }
+  if ((row.counties as unknown[]).some(c => typeof c !== 'string' || !COUNTIES.includes(c))) return { error: 'Unknown county' }
   if (row.active && (row.counties as unknown[]).length === 0) return { error: 'Choose at least one county before turning the ad on' }
   if (row.website && !/^https?:\/\/\S+$/i.test(row.website as string)) return { error: 'Website must start with http:// or https://' }
   if (row.contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.contact_email as string)) return { error: 'Contact email is not valid' }
@@ -530,8 +535,8 @@ router.post('/ads', asyncHandler(async (req, res) => {
 // PUT /api/admin/ads/:id
 router.put('/ads/:id', asyncHandler(async (req, res) => {
   const id = String(req.params.id)
-  if (!/^[0-9a-f-]{36}$/i.test(id)) {
-    res.status(400).json({ error: 'Invalid id' })
+  if (!UUID_RE.test(id)) {
+    res.status(404).json({ error: 'Ad not found' })
     return
   }
   const parsed = adInput(req.body ?? {})
@@ -551,9 +556,14 @@ router.put('/ads/:id', asyncHandler(async (req, res) => {
 // POST /api/admin/ads/:id/report-link — create or replace the advertiser's private report link
 router.post('/ads/:id/report-link', asyncHandler(async (req, res) => {
   const id = String(req.params.id)
+  if (!UUID_RE.test(id)) {
+    res.status(404).json({ error: 'Ad not found' })
+    return
+  }
   const { data, error } = await supabaseAdmin.from('service_ads')
     .update({ report_token: randomBytes(18).toString('base64url') }).eq('id', id).select('report_token').maybeSingle()
   if (error || !data) {
+    if (error) console.error('Failed to create report link:', error)
     res.status(error ? 500 : 404).json({ error: error ? 'Failed to create the link' : 'Ad not found' })
     return
   }
@@ -563,8 +573,13 @@ router.post('/ads/:id/report-link', asyncHandler(async (req, res) => {
 // DELETE /api/admin/ads/:id
 router.delete('/ads/:id', asyncHandler(async (req, res) => {
   const id = String(req.params.id)
+  if (!UUID_RE.test(id)) {
+    res.status(404).json({ error: 'Ad not found' })
+    return
+  }
   const { data, error } = await supabaseAdmin.from('service_ads').delete().eq('id', id).select('id').maybeSingle()
   if (error || !data) {
+    if (error) console.error('Failed to delete ad:', error)
     res.status(error ? 500 : 404).json({ error: error ? 'Failed to delete the ad' : 'Ad not found' })
     return
   }

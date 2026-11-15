@@ -90,7 +90,7 @@ export function Leads() {
     fetchLeads()
   }
 
-  const act = async (id: string, action: 'claim' | 'release' | 'close') => {
+  const act = async (id: string, action: 'claim' | 'close') => {
     setBusyId(id)
     setActionError(null)
     try {
