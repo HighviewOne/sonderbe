@@ -45,7 +45,9 @@ export const OUTCOMES = ['short_sale_closed', 'loan_modified', 'reinstated', 'so
 // The chosen professional's name is appended when the request is stored.
 export const CHOSEN_CONSENT_TEXT =
   'I agree that SonderBe may share my name, email, phone number (if given), county, ' +
-  'situation, and checklist progress with the one professional I chose, and that this ' +
+  'situation, checklist progress, and the details I enter under My Information (address, ' +
+  'other contact details, household members and their kinds of income, and hardship) with ' +
+  'the one professional I chose, and that this ' +
   'professional may contact me by phone, text, or email about my situation and post ' +
   'updates and document requests to my portal. I understand that SonderBe does not charge ' +
   'homeowners, that I never have to pay anyone upfront for foreclosure help, that SonderBe ' +
@@ -59,3 +61,31 @@ export const STANDARD_DOCUMENTS = [
   'Hardship letter (why you fell behind)',
   'Most recent mortgage statement'
 ]
+
+// ---------------------------------------------------------------------------
+// Homeowner information + multiple professionals (migration 004).
+// Keep in sync with src/lib/constants.ts.
+// ---------------------------------------------------------------------------
+
+// A homeowner can have one SonderBe case per category
+export const CATEGORY_OF: Record<ProfessionalType, 'real_estate' | 'legal'> = {
+  agent: 'real_estate',
+  broker: 'real_estate',
+  negotiator: 'real_estate',
+  legal_professional: 'legal',
+  attorney: 'legal'
+}
+
+export const RELATIONSHIPS = ['self', 'spouse', 'partner', 'child', 'parent', 'relative', 'roommate', 'other'] as const
+
+export const INCOME_TYPES = [
+  'employment', 'self_employment', 'social_security', 'pension', 'disability',
+  'unemployment', 'rental', 'child_support', 'other'
+] as const
+
+export const HARDSHIP_REASONS = [
+  'job_loss', 'reduced_income', 'medical', 'divorce', 'death', 'disability',
+  'business_failure', 'increased_expenses', 'disaster', 'other'
+] as const
+
+export const TEAM_STATUSES = ['contacted', 'consultation', 'retained', 'done'] as const

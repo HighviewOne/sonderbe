@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { ThemeToggle } from './ThemeToggle'
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -39,11 +40,10 @@ export function Header() {
         <div className={`nav-auth ${mobileMenuOpen ? 'active' : ''}`}>
           {user ? (
             <>
-              {!isPortalPage && (
-                <Link to="/portal" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>My Portal</Link>
-              )}
-              {isInvestor && !isInvestorPage && (
-                <Link to="/investor" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>Professional Portal</Link>
+              {isInvestor ? (
+                !isInvestorPage && <Link to="/investor" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>My Portal</Link>
+              ) : (
+                !isPortalPage && <Link to="/portal" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>My Portal</Link>
               )}
               {isAdmin && !isAdminPage && (
                 <Link to="/admin" className="nav-auth-link" onClick={() => setMobileMenuOpen(false)}>Admin</Link>
@@ -60,6 +60,7 @@ export function Header() {
             </>
           )}
         </div>
+        <ThemeToggle />
         <button
           className="mobile-menu-btn"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

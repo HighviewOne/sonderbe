@@ -3,63 +3,70 @@ import { supabaseAdmin } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
-import { COUNTIES, SITUATIONS, CHOSEN_CONSENT_TEXT, MAX_ACTIVE_CLAIMS } from '../matching.js'
+import { COUNTIES, SITUATIONS, CHOSEN_CONSENT_TEXT, MAX_ACTIVE_CLAIMS, CATEGORY_OF } from '../matching.js'
 import { listedProfessionals } from './directory.js'
-import { caseDetails, addCaseEvent, UUID_RE } from '../cases.js'
+import { caseDetails, addCaseEvent, UUID_RE, DOC_FIELDS, presentDocument, addDocHistory, professionalContact } from '../cases.js'
 
 // Homeowner side of matching: the homeowner picks one professional from the directory,
 // then follows the case (stage, next step, timeline, document checklist).
 const router = Router()
 
-// GET /api/match — own match request (or null), the consent wording, and once matched:
-// the professional's listing + contact details, the case timeline and document checklist
+// GET /api/match — the homeowner's cases (one per category: real estate, legal), the consent
+// wording, and for each active case the professional's listing + contact, timeline and documents
 router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const { data: request, error } = await supabaseAdmin
+  const { data: requests, error } = await supabaseAdmin
     .from('match_requests')
-    .select('id, homeowner_id, county, situation, contact_name, contact_phone, best_time, status, claimed_by, claimed_at, created_at, stage, next_step, outcome, stage_updated_at')
+    .select('id, homeowner_id, category, county, situation, contact_name, contact_phone, best_time, status, claimed_by, claimed_at, created_at, stage, next_step, outcome, stage_updated_at, homeowner_notes_read_at')
     .eq('homeowner_id', req.userId!)
-    .maybeSingle()
+    .order('created_at', { ascending: true })
 
   if (error) {
-    console.error('Failed to fetch match request:', error)
-    res.status(500).json({ error: 'Failed to fetch match request' })
+    console.error('Failed to fetch match requests:', error)
+    res.status(500).json({ error: 'Failed to fetch your cases' })
     return
   }
 
-  let professional = null
-  let events: unknown[] = []
-  let documents: unknown[] = []
-  if (request?.status === 'claimed' && request.claimed_by) {
-    const [{ data: contact, error: proError }, listing, details] = await Promise.all([
-      supabaseAdmin.from('profiles')
-        .select('full_name, email, phone, business_name, professional_type, website, license_number, license_verified')
-        .eq('id', request.claimed_by).maybeSingle(),
-      listedProfessionals({ id: request.claimed_by }),
-      caseDetails([{ id: request.id, homeowner_id: request.homeowner_id }])
-    ])
-    if (proError) console.error('Failed to fetch matched professional:', proError)
-    // Contact details come from the profile even if the listing was since unpublished
-    professional = contact ? { ...(listing?.[0] ?? {}), ...contact } : null
-    if (details) {
-      events = details.get(request.id)!.events
-      documents = details.get(request.id)!.documents
-    }
+  const active = requests.filter(r => r.status === 'claimed' && r.claimed_by)
+  const [details, contacts] = await Promise.all([
+    caseDetails(active.map(r => ({ id: r.id, homeowner_id: r.homeowner_id }))),
+    professionalContact(active.map(r => r.claimed_by as string))
+  ])
+  if (details === null) {
+    res.status(500).json({ error: 'Failed to fetch your cases' })
+    return
   }
 
-  let publicRequest = null
-  if (request) {
-    // internal profile ids stay server-side; the homeowner gets `professional` instead
-    publicRequest = { ...request } as Partial<typeof request>
+  const cases = await Promise.all(requests.map(async (r) => {
+    let professional = null
+    if (r.status === 'claimed' && r.claimed_by) {
+      const [{ data: contact, error: proError }, listing] = await Promise.all([
+        supabaseAdmin.from('profiles')
+          .select('full_name, email, phone, business_name, professional_type, website, license_number, license_verified, avatar_url')
+          .eq('id', r.claimed_by).maybeSingle(),
+        listedProfessionals({ id: r.claimed_by })
+      ])
+      if (proError) console.error('Failed to fetch matched professional:', proError)
+      // Contact details come from the profile even if the listing was since unpublished
+      professional = contact ? { ...(listing?.[0] ?? {}), ...contact, office: contacts.get(r.claimed_by) ?? null } : null
+    }
+    const publicRequest = { ...r } as Partial<typeof r>
     delete publicRequest.claimed_by
     delete publicRequest.homeowner_id
-  }
-  res.json({
-    request: publicRequest,
-    professional,
-    events,
-    documents,
-    consent_text: CHOSEN_CONSENT_TEXT
-  })
+    delete publicRequest.homeowner_notes_read_at
+    const notes = details.get(r.id)?.notes ?? []
+    return {
+      category: r.category,
+      request: publicRequest,
+      professional,
+      events: details.get(r.id)?.events ?? [],
+      documents: details.get(r.id)?.documents ?? [],
+      notes,
+      unread_notes: notes.filter(n => n.author_role === 'professional' &&
+        (!r.homeowner_notes_read_at || n.created_at > r.homeowner_notes_read_at)).length
+    }
+  }))
+
+  res.json({ cases, consent_text: CHOSEN_CONSENT_TEXT })
 }))
 
 // POST /api/match — choose a professional from the directory (creates or reopens own request)
@@ -122,9 +129,10 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
     return
   }
 
+  const category = CATEGORY_OF[pro.professional_type]
   const [{ data: profile, error: profileError }, { data: existing, error: existingError }] = await Promise.all([
     supabaseAdmin.from('profiles').select('email').eq('id', req.userId!).single(),
-    supabaseAdmin.from('match_requests').select('status').eq('homeowner_id', req.userId!).maybeSingle()
+    supabaseAdmin.from('match_requests').select('id, status').eq('homeowner_id', req.userId!).eq('category', category).maybeSingle()
   ])
   if (profileError || !profile || existingError) {
     console.error('Failed to prepare match request:', profileError || existingError)
@@ -132,7 +140,11 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
     return
   }
   if (existing?.status === 'claimed') {
-    res.status(409).json({ error: 'You already have a professional. Withdraw first to choose someone new.' })
+    res.status(409).json({
+      error: category === 'legal'
+        ? 'You already have a legal professional. Withdraw first to choose someone new.'
+        : 'You already have a real estate professional. Withdraw first to choose someone new.'
+    })
     return
   }
 
@@ -140,6 +152,7 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
   const proName = [pro.full_name, pro.business_name].filter(Boolean).join(', ')
   const row = {
     homeowner_id: req.userId!,
+    category,
     county,
     situation,
     contact_name: contact_name.trim(),
@@ -159,20 +172,17 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
 
   // A reopened request starts a fresh case: clear the old timeline and documents
   if (existing) {
-    const { data: old } = await supabaseAdmin.from('match_requests').select('id').eq('homeowner_id', req.userId!).single()
-    if (old) {
-      await Promise.all([
-        supabaseAdmin.from('case_events').delete().eq('match_request_id', old.id),
-        supabaseAdmin.from('case_documents').delete().eq('match_request_id', old.id)
-      ])
-    }
+    await Promise.all([
+      supabaseAdmin.from('case_events').delete().eq('match_request_id', existing.id),
+      supabaseAdmin.from('case_documents').delete().eq('match_request_id', existing.id)
+    ])
   }
 
   // The status filter on the update keeps a concurrent pick from being overwritten
   const query = existing
-    ? supabaseAdmin.from('match_requests').update(row).eq('homeowner_id', req.userId!).neq('status', 'claimed')
+    ? supabaseAdmin.from('match_requests').update(row).eq('id', existing.id).neq('status', 'claimed')
     : supabaseAdmin.from('match_requests').insert(row)
-  const { data, error } = await query.select('id, county, situation, status, stage, created_at').maybeSingle()
+  const { data, error } = await query.select('id, category, county, situation, status, stage, created_at').maybeSingle()
 
   if (error) {
     console.error('Failed to save match request:', error)
@@ -204,19 +214,18 @@ router.patch('/documents/:docId', requireAuth, asyncHandler(async (req: Authenti
     return
   }
 
-  // Only documents on the homeowner's own active case
-  const { data: request, error: reqError } = await supabaseAdmin
+  // Only documents on the homeowner's own active cases
+  const { data: requests, error: reqError } = await supabaseAdmin
     .from('match_requests')
     .select('id')
     .eq('homeowner_id', req.userId!)
     .eq('status', 'claimed')
-    .maybeSingle()
   if (reqError) {
-    console.error('Failed to fetch match request for document update:', reqError)
+    console.error('Failed to fetch match requests for document update:', reqError)
     res.status(500).json({ error: 'Failed to update document' })
     return
   }
-  if (!request) {
+  if (requests.length === 0) {
     res.status(404).json({ error: 'No active case' })
     return
   }
@@ -227,8 +236,9 @@ router.patch('/documents/:docId', requireAuth, asyncHandler(async (req: Authenti
     .from('case_documents')
     .update(update)
     .eq('id', docId)
-    .eq('match_request_id', request.id)
-    .select('id, label, sort_order, homeowner_note, sent_at, received_at')
+    .in('match_request_id', requests.map(r => r.id))
+    .is('received_at', null)
+    .select(DOC_FIELDS)
     .maybeSingle()
   if (error) {
     console.error('Failed to update document:', error)
@@ -236,17 +246,81 @@ router.patch('/documents/:docId', requireAuth, asyncHandler(async (req: Authenti
     return
   }
   if (!data) {
-    res.status(404).json({ error: 'Document not found' })
+    res.status(404).json({ error: 'Document not found, or already received' })
     return
   }
-  res.json(data)
+  await addDocHistory(data.id, data.match_request_id, data.round, sent ? 'sent' : 'unsent', req.userId!)
+  res.json(presentDocument(data))
 }))
 
-// DELETE /api/match — withdraw own request (stops contact; hides details from the professional)
-router.delete('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
+async function ownActiveRequest(homeownerId: string, id: string) {
+  const { data } = await supabaseAdmin.from('match_requests').select('id')
+    .eq('id', id).eq('homeowner_id', homeownerId).eq('status', 'claimed').maybeSingle()
+  return data
+}
+
+// POST /api/match/:id/notes — { body, document_id? } note to the professional
+router.post('/:id/notes', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const id = String(req.params.id)
+  const body = typeof req.body?.body === 'string' ? req.body.body.trim() : ''
+  const documentId = req.body?.document_id ?? null
+  if (!UUID_RE.test(id)) {
+    res.status(400).json({ error: 'Invalid case id' })
+    return
+  }
+  if (!body || body.length > 2000) {
+    res.status(400).json({ error: 'Write a note (2000 characters max)' })
+    return
+  }
+  if (documentId !== null && (typeof documentId !== 'string' || !UUID_RE.test(documentId))) {
+    res.status(400).json({ error: 'Invalid document' })
+    return
+  }
+  if (!(await ownActiveRequest(req.userId!, id))) {
+    res.status(404).json({ error: 'No active case with this id' })
+    return
+  }
+  if (documentId) {
+    const { data: doc } = await supabaseAdmin.from('case_documents').select('id').eq('id', documentId).eq('match_request_id', id).maybeSingle()
+    if (!doc) {
+      res.status(404).json({ error: 'Document not found' })
+      return
+    }
+  }
+  const { data, error } = await supabaseAdmin.from('case_notes')
+    .insert({ match_request_id: id, document_id: documentId, author_id: req.userId!, author_role: 'homeowner', body })
+    .select('id, document_id, author_role, body, created_at').single()
+  if (error) {
+    console.error('Failed to add note:', error)
+    res.status(500).json({ error: 'Failed to send the note' })
+    return
+  }
+  await supabaseAdmin.from('match_requests').update({ homeowner_notes_read_at: data.created_at }).eq('id', id)
+  res.status(201).json(data)
+}))
+
+// POST /api/match/:id/notes/read
+router.post('/:id/notes/read', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const id = String(req.params.id)
+  if (!UUID_RE.test(id) || !(await ownActiveRequest(req.userId!, id))) {
+    res.status(404).json({ error: 'No active case with this id' })
+    return
+  }
+  await supabaseAdmin.from('match_requests').update({ homeowner_notes_read_at: new Date().toISOString() }).eq('id', id)
+  res.json({ ok: true })
+}))
+
+// DELETE /api/match/:id — withdraw one case (stops contact; hides details from that professional)
+router.delete('/:id', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const id = String(req.params.id)
+  if (!UUID_RE.test(id)) {
+    res.status(400).json({ error: 'Invalid case id' })
+    return
+  }
   const { data, error } = await supabaseAdmin
     .from('match_requests')
     .update({ status: 'withdrawn' })
+    .eq('id', id)
     .eq('homeowner_id', req.userId!)
     .in('status', ['open', 'claimed'])
     .select('id, status')
@@ -254,11 +328,11 @@ router.delete('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, r
 
   if (error) {
     console.error('Failed to withdraw match request:', error)
-    res.status(500).json({ error: 'Failed to withdraw request' })
+    res.status(500).json({ error: 'Failed to withdraw' })
     return
   }
   if (!data) {
-    res.status(404).json({ error: 'No active request to withdraw' })
+    res.status(404).json({ error: 'No active case to withdraw' })
     return
   }
   res.json(data)

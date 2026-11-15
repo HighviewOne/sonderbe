@@ -1,5 +1,5 @@
 import type { Response, NextFunction } from 'express'
-import { supabaseAdmin } from '../config.js'
+import { professionalsWithAccess } from '../access.js'
 import type { AuthenticatedRequest } from '../types.js'
 
 export async function investorOnly(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -9,14 +9,13 @@ export async function investorOnly(req: AuthenticatedRequest, res: Response, nex
   }
 
   try {
-    // Check for active subscription
-    const { data: subscription } = await supabaseAdmin
-      .from('investor_subscriptions')
-      .select('status')
-      .eq('user_id', req.userId!)
-      .single()
-
-    if (!subscription || (subscription.status !== 'active' && subscription.status !== 'trialing')) {
+    // Own subscription, or a brokerage whose broker pays for the team
+    const allowed = await professionalsWithAccess([req.userId!])
+    if (allowed === null) {
+      res.status(500).json({ error: 'Failed to verify subscription' })
+      return
+    }
+    if (!allowed.has(req.userId!)) {
       res.status(403).json({ error: 'Active subscription required' })
       return
     }

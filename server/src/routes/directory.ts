@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
+import { professionalsWithAccess } from '../access.js'
 import {
   COUNTIES, PROFESSIONAL_TYPES, LICENSED_TYPES, DIRECT_CONTACT_ONLY_TYPES, MAX_ACTIVE_CLAIMS,
   type ProfessionalType
@@ -24,6 +25,8 @@ export type DirectoryEntry = {
   licensed_profession: boolean
   direct_contact_only: boolean
   service_counties: string[]
+  avatar_url: string | null
+  brokerage: { name: string; logo_url: string | null } | null
   accepting: boolean
   // Only for direct-contact-only types (plain directory ads)
   email?: string
@@ -35,7 +38,7 @@ export type DirectoryEntry = {
 export async function listedProfessionals(filter: { county?: string; type?: string; id?: string }): Promise<DirectoryEntry[] | null> {
   let query = supabaseAdmin
     .from('profiles')
-    .select('id, full_name, email, phone, business_name, professional_type, bio, website, license_number, license_verified, service_counties')
+    .select('id, full_name, email, phone, business_name, professional_type, bio, website, license_number, license_verified, service_counties, avatar_url, brokerage_id')
     .eq('role', 'investor')
     .eq('listed', true)
     .not('professional_type', 'is', null)
@@ -52,15 +55,19 @@ export async function listedProfessionals(filter: { county?: string; type?: stri
   if (!pros || pros.length === 0) return []
 
   const ids = pros.map(p => p.id)
-  const [subs, claims] = await Promise.all([
-    supabaseAdmin.from('investor_subscriptions').select('user_id, status').in('user_id', ids),
-    supabaseAdmin.from('match_requests').select('claimed_by').in('claimed_by', ids).eq('status', 'claimed')
+  const brokerageIds = [...new Set(pros.map(p => p.brokerage_id).filter((b): b is string => Boolean(b)))]
+  const [active, claims, brokerages] = await Promise.all([
+    professionalsWithAccess(ids),
+    supabaseAdmin.from('match_requests').select('claimed_by').in('claimed_by', ids).eq('status', 'claimed'),
+    brokerageIds.length
+      ? supabaseAdmin.from('brokerages').select('id, name, logo_url').in('id', brokerageIds)
+      : Promise.resolve({ data: [] as { id: string; name: string; logo_url: string | null }[], error: null })
   ])
-  if (subs.error || claims.error) {
-    console.error('Failed to fetch directory subscriptions/claims:', subs.error || claims.error)
+  if (active === null || claims.error || brokerages.error) {
+    console.error('Failed to fetch directory access/claims/brokerages:', claims.error || brokerages.error)
     return null
   }
-  const active = new Set(subs.data.filter(s => s.status === 'active' || s.status === 'trialing').map(s => s.user_id))
+  const brokerageById = new Map(brokerages.data.map(b => [b.id, { name: b.name, logo_url: b.logo_url }]))
   const claimCount = new Map<string, number>()
   for (const c of claims.data) claimCount.set(c.claimed_by, (claimCount.get(c.claimed_by) ?? 0) + 1)
 
@@ -81,6 +88,8 @@ export async function listedProfessionals(filter: { county?: string; type?: stri
         licensed_profession: LICENSED_TYPES.includes(type),
         direct_contact_only: direct,
         service_counties: p.service_counties ?? [],
+        avatar_url: p.avatar_url,
+        brokerage: p.brokerage_id ? brokerageById.get(p.brokerage_id) ?? null : null,
         accepting: direct || (claimCount.get(p.id) ?? 0) < MAX_ACTIVE_CLAIMS
       }
       if (direct) {

@@ -18,7 +18,7 @@ type ServiceAd = {
 // Sponsored local services for the move (movers, storage, cleaning, rentals). Kept on its
 // own page, apart from the professional directory. Advertisers never get homeowner data.
 export function MovingForward() {
-  const { request, loading: matchLoading } = useMatch()
+  const { cases, loading: matchLoading } = useMatch()
   if (matchLoading) {
     return (
       <div className="loading-container">
@@ -27,7 +27,7 @@ export function MovingForward() {
       </div>
     )
   }
-  return <ServiceList initialCounty={request?.county ?? ''} />
+  return <ServiceList initialCounty={cases[0]?.request.county ?? ''} />
 }
 
 function ServiceList({ initialCounty }: { initialCounty: string }) {

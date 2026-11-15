@@ -3,21 +3,32 @@ import type { FormEvent } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import type { DirectoryEntry, MatchInput, MatchRequest } from '../../hooks/useMatch'
 import { apiGet } from '../../lib/api'
-import { COUNTIES, situationOptions, professionalTypes } from '../../lib/constants'
-import type { ProfessionalType } from '../../lib/constants'
+import { COUNTIES, situationOptions, professionalTypes, categoryOf, categoryLabels } from '../../lib/constants'
+import type { Category, ProfessionalType } from '../../lib/constants'
 import { ProfessionalHeader } from '../case/CaseParts'
 
 type Props = {
+  category: Category
   previous: MatchRequest | null
+  defaultCounty: string
   consentText: string
   onChoose: (input: MatchInput) => Promise<void>
+  onCancel: () => void
+  // Attorneys are direct-contact only: the homeowner can add them to their own team list
+  onAddToTeam?: (pro: DirectoryEntry) => Promise<void>
+  teamDirectoryIds?: string[]
 }
 
-export function FindProfessional({ previous, consentText, onChoose }: Props) {
-  const [county, setCounty] = useState(previous?.county ?? '')
+export function FindProfessional({
+  category, previous, defaultCounty, consentText, onChoose, onCancel, onAddToTeam, teamDirectoryIds = []
+}: Props) {
+  const typesHere = professionalTypes.filter(t => categoryOf[t.value] === category)
+  const [county, setCounty] = useState(previous?.county || defaultCounty)
   const [type, setType] = useState<ProfessionalType | ''>('')
   const [pros, setPros] = useState<DirectoryEntry[] | null>(null)
-  const [loading, setLoading] = useState(Boolean(previous?.county))
+  const [loading, setLoading] = useState(Boolean(previous?.county || defaultCounty))
+  const [adding, setAdding] = useState<string | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [choosing, setChoosing] = useState<string | null>(null)
 
@@ -27,7 +38,7 @@ export function FindProfessional({ previous, consentText, onChoose }: Props) {
     if (t) params.set('type', t)
     apiGet<{ professionals: DirectoryEntry[] }>(`/directory?${params}`)
       .then(res => {
-        setPros(res.professionals)
+        setPros(res.professionals.filter(p => categoryOf[p.professional_type] === category))
         setError(null)
       })
       .catch(err => {
@@ -35,7 +46,7 @@ export function FindProfessional({ previous, consentText, onChoose }: Props) {
         setError('Failed to load professionals. Please try again.')
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [category])
 
   useEffect(() => {
     if (county) fetchDirectory(county, type)
@@ -56,17 +67,32 @@ export function FindProfessional({ previous, consentText, onChoose }: Props) {
 
   const selectedType = professionalTypes.find(t => t.value === type)
 
+  const addToTeam = async (pro: DirectoryEntry) => {
+    if (!onAddToTeam) return
+    setAdding(pro.id)
+    setAddError(null)
+    try {
+      await onAddToTeam(pro)
+    } catch (e) {
+      setAddError(e instanceof Error ? e.message : 'Failed to add to your team')
+    } finally {
+      setAdding(null)
+    }
+  }
+
   return (
     <div className="find-professional">
-      <div className="page-header">
-        <h1>Find a Professional</h1>
-        <p>
-          Choose one professional in your county to help with your situation. It's free for homeowners, and only
-          the professional you choose sees your contact details. You can withdraw at any time.
-        </p>
-        {previous?.status === 'withdrawn' && <p>You withdrew from your last professional. You can choose someone new below.</p>}
-        {previous?.status === 'closed' && <p>Your last case was closed. You can choose a professional again below.</p>}
+      <div className="card-header">
+        <h2>Find: {categoryLabels[category]}</h2>
+        <button type="button" className="btn btn-secondary btn-small" onClick={onCancel}>Close</button>
       </div>
+      <p>
+        {category === 'legal'
+          ? 'Attorneys are listed for you to contact directly; add the one you hire to your team so you can keep track. Legal document assistants can be chosen here and work with you on SonderBe.'
+          : "Choose one real estate professional in your county. Only the professional you choose sees your details, and it's free for homeowners."}
+      </p>
+      {previous?.status === 'withdrawn' && <p>You withdrew from your last professional here. You can choose someone new below.</p>}
+      {previous?.status === 'closed' && <p>Your last case here was closed. You can choose again below.</p>}
 
       <div className="dashboard-card warning-card">
         <strong>Never pay anyone upfront for foreclosure help.</strong> In California it is illegal to charge you
@@ -86,7 +112,7 @@ export function FindProfessional({ previous, consentText, onChoose }: Props) {
           <button type="button" className={`type-chip ${type === '' ? 'active' : ''}`} onClick={() => changeType('')}>
             All
           </button>
-          {professionalTypes.map(t => (
+          {typesHere.map(t => (
             <button
               key={t.value}
               type="button"
@@ -104,7 +130,7 @@ export function FindProfessional({ previous, consentText, onChoose }: Props) {
           <details className="type-help">
             <summary>Which kind of professional do I need?</summary>
             <dl>
-              {professionalTypes.map(t => (
+              {typesHere.map(t => (
                 <div key={t.value}>
                   <dt>{t.label}</dt>
                   <dd>{t.description}</dd>
@@ -115,6 +141,7 @@ export function FindProfessional({ previous, consentText, onChoose }: Props) {
         )}
       </div>
 
+      {addError && <div className="error-message">{addError}</div>}
       {!county ? (
         <p className="empty-state">Choose your county to see professionals who serve it.</p>
       ) : loading ? (
@@ -147,6 +174,13 @@ export function FindProfessional({ previous, consentText, onChoose }: Props) {
                     {pro.phone && <li>Phone: <a href={`tel:${pro.phone}`}>{pro.phone}</a></li>}
                     {pro.email && <li>Email: <a href={`mailto:${pro.email}`}>{pro.email}</a></li>}
                   </ul>
+                  {onAddToTeam && (teamDirectoryIds.includes(pro.id)
+                    ? <p className="form-note">✓ On your team</p>
+                    : (
+                      <button className="btn btn-secondary btn-small" disabled={adding === pro.id} onClick={() => addToTeam(pro)}>
+                        {adding === pro.id ? 'Adding...' : 'Add to my team (just for my records)'}
+                      </button>
+                    ))}
                 </div>
               ) : !pro.accepting ? (
                 <p className="form-note">Not taking new clients right now.</p>

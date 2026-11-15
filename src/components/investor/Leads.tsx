@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { apiGet, apiPost, apiPut } from '../../lib/api'
 import { checklistData, COUNTIES, situationLabel, stageLabel } from '../../lib/constants'
 import type { Stage } from '../../lib/constants'
-import type { CaseDocument, CaseEvent } from '../../hooks/useMatch'
+import type { CaseDocument, CaseEvent, CaseNote } from '../../hooks/useMatch'
 import { CaseManager } from './CaseManager'
+import { HomeownerPanel } from './HomeownerPanel'
+import type { SharedHomeowner } from './HomeownerPanel'
 
 type OpenLead = {
   id: string
@@ -31,6 +34,9 @@ type MyLead = {
   outcome: string | null
   events: CaseEvent[]
   documents: CaseDocument[]
+  notes: CaseNote[]
+  unread_notes: number
+  homeowner: SharedHomeowner
 }
 
 type LeadsResponse = {
@@ -71,6 +77,13 @@ export function Leads() {
   useEffect(() => {
     fetchLeads()
   }, [fetchLeads])
+
+  // Links like /investor/clients#case-<id> jump to that client once loaded
+  const { hash } = useLocation()
+  const loaded = data !== null
+  useEffect(() => {
+    if (loaded && hash.startsWith('#case-')) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' })
+  }, [loaded, hash])
 
   const reload = () => {
     setLoading(true)
@@ -131,7 +144,7 @@ export function Leads() {
   return (
     <div className="leads">
       <div className="page-header">
-        <h1>My Clients</h1>
+        <h1>Clients</h1>
         <p>
           Homeowners who chose you from the SonderBe directory. Keep each case's stage and next step current and
           request documents here; homeowners see every update in their portal. Homeowners never pay SonderBe,
@@ -179,7 +192,7 @@ export function Leads() {
         ) : (
           <ul className="lead-list">
             {active.map(lead => (
-              <li key={lead.id} className="lead-item">
+              <li key={lead.id} id={`case-${lead.id}`} className="lead-item">
                 <div className="lead-summary">
                   <strong>{lead.contact_name}</strong> · {lead.county} · {situationLabel(lead.situation)}
                   <span className="lead-readiness">{stageLabel(lead.stage)} · checklist {readinessPercent(lead.checked_items.length)}%</span>
@@ -189,7 +202,8 @@ export function Leads() {
                   {lead.contact_phone && <> · <a href={`tel:${lead.contact_phone}`}>{lead.contact_phone}</a></>}
                   {lead.best_time && <> · Best time: {lead.best_time}</>}
                 </div>
-                <CaseManager lead={lead} onChanged={fetchLeads} />
+                <HomeownerPanel homeowner={lead.homeowner} firstName={lead.contact_name.split(/\s+/)[0]} />
+                <CaseManager lead={lead} onChanged={fetchLeads} canUseHousehold={Boolean(lead.homeowner)} />
                 <details>
                   <summary>Readiness checklist detail</summary>
                   {checklistData.map((cat, ci) => {

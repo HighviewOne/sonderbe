@@ -10,7 +10,8 @@ import {
   PortalPage,
   AdminPage,
   InvestorPage,
-  InvestorSubscribePage
+  InvestorSubscribePage,
+  JoinBrokeragePage
 } from './pages'
 import './App.css'
 
@@ -48,6 +49,14 @@ function App() {
           element={
             <ProtectedRoute requireAdmin>
               <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/join/:token"
+          element={
+            <ProtectedRoute>
+              <JoinBrokeragePage />
             </ProtectedRoute>
           }
         />

@@ -4,6 +4,7 @@ import { useChecklist } from '../../hooks/useChecklist'
 import { useDocuments } from '../../hooks/useDocuments'
 import { useSubmissions } from '../../hooks/useSubmissions'
 import { useMatch } from '../../hooks/useMatch'
+import { useMyInfo, infoProgress } from '../../hooks/useMyInfo'
 import { DOCUMENT_UPLOADS_ENABLED, stageLabel } from '../../lib/constants'
 
 export function Dashboard() {
@@ -45,6 +46,8 @@ export function Dashboard() {
             </>
           )}
         </div>
+
+        <InfoCard />
 
         {DOCUMENT_UPLOADS_ENABLED ? <DocumentsCard /> : <MatchCard />}
 
@@ -105,32 +108,61 @@ export function Dashboard() {
 }
 
 function MatchCard() {
-  const { request, professional, documents, loading } = useMatch()
-  const active = request?.status === 'claimed'
-  const toSend = documents.filter(d => !d.sent_at).length
+  const { activeCases, loading } = useMatch()
 
   return (
     <div className="dashboard-card match-overview">
       <div className="card-header">
-        <h2>My Professional</h2>
+        <h2>My Professionals</h2>
       </div>
       {loading ? (
         <p>Loading...</p>
-      ) : !active ? (
+      ) : activeCases.length === 0 ? (
         <>
-          <p className="empty-state">Choose an agent, broker or other professional in your county. Free for homeowners.</p>
+          <p className="empty-state">Choose a real estate professional or find legal help in your county. Free for homeowners.</p>
           <Link to="/portal/match" className="btn btn-secondary btn-full">Find a Professional</Link>
         </>
       ) : (
         <>
-          <p>
-            <strong>{professional?.full_name || 'Your professional'}</strong>
-            {professional?.business_name && <> · {professional.business_name}</>}
-          </p>
-          <p>Stage: <strong>{stageLabel(request.stage)}</strong></p>
-          {request.next_step && <p>Next step: {request.next_step}</p>}
-          {toSend > 0 && <p>{toSend} document{toSend === 1 ? '' : 's'} still to send</p>}
-          <Link to="/portal/match" className="btn btn-secondary btn-full">View My Case</Link>
+          {activeCases.map(c => {
+            const toSend = c.documents.filter(d => !d.sent_at && !d.received_at).length
+            return (
+              <div key={c.request.id} className="dash-case">
+                <p>
+                  <strong>{c.professional?.full_name || 'Your professional'}</strong>
+                  {c.professional?.business_name && <> · {c.professional.business_name}</>}
+                </p>
+                <p>Stage: <strong>{stageLabel(c.request.stage)}</strong>{toSend > 0 && <> · {toSend} document{toSend === 1 ? '' : 's'} to send</>}</p>
+                {c.unread_notes > 0 && <p><span className="unread-badge">{c.unread_notes} new note{c.unread_notes === 1 ? '' : 's'}</span></p>}
+                {c.request.next_step && <p>Next step: {c.request.next_step}</p>}
+              </div>
+            )
+          })}
+          <Link to="/portal/match" className="btn btn-secondary btn-full">View My Cases</Link>
+        </>
+      )}
+    </div>
+  )
+}
+
+function InfoCard() {
+  const { data, loading } = useMyInfo()
+  const progress = infoProgress(data)
+  return (
+    <div className="dashboard-card">
+      <div className="card-header">
+        <h2>My Information</h2>
+      </div>
+      {loading ? <p>Loading...</p> : (
+        <>
+          <p>{progress.done} of {progress.total} sections done</p>
+          <div className="progress-bar-container" aria-hidden="true">
+            <div className="progress-bar" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+          </div>
+          <p className="form-note">Enter it once; it fills your document list and hardship letter.</p>
+          <Link to="/portal/info" className="btn btn-secondary btn-full">
+            {progress.done === progress.total ? 'Review My Information' : 'Continue'}
+          </Link>
         </>
       )}
     </div>

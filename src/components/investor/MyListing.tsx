@@ -5,6 +5,8 @@ import { apiGet, apiPut } from '../../lib/api'
 import { professionalTypes } from '../../lib/constants'
 import type { ProfessionalType } from '../../lib/constants'
 import { ProfessionalHeader } from '../case/CaseParts'
+import { ImageUpload } from '../case/ImageUpload'
+import { apiDelete } from '../../lib/api'
 
 type Listing = {
   full_name: string | null
@@ -18,6 +20,8 @@ type Listing = {
   no_upfront_fee_pledged_at: string | null
   listed: boolean
   service_counties: string[]
+  avatar_url: string | null
+  brokerage_id: string | null
 }
 
 const LICENSED: ProfessionalType[] = ['agent', 'broker', 'attorney']
@@ -26,7 +30,7 @@ const PLEDGE_TEXT =
   'I will not charge any homeowner I meet through SonderBe a fee before my services are complete, ' +
   'I will not promise to stop a foreclosure, and I will tell homeowners plainly how I get paid.'
 
-export function MyListing() {
+export function MyListing({ embedded = false }: { embedded?: boolean }) {
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -58,10 +62,10 @@ export function MyListing() {
     )
   }
   if (error || !listing) return <div className="error-message">{error}</div>
-  return <ListingForm listing={listing} onSaved={setListing} />
+  return <ListingForm listing={listing} onSaved={setListing} embedded={embedded} />
 }
 
-function ListingForm({ listing, onSaved }: { listing: Listing; onSaved: (l: Listing) => void }) {
+function ListingForm({ listing, onSaved, embedded }: { listing: Listing; onSaved: (l: Listing) => void; embedded: boolean }) {
   const [type, setType] = useState<ProfessionalType | ''>(listing.professional_type ?? '')
   const [businessName, setBusinessName] = useState(listing.business_name ?? '')
   const [bio, setBio] = useState(listing.bio ?? '')
@@ -72,6 +76,7 @@ function ListingForm({ listing, onSaved }: { listing: Listing; onSaved: (l: List
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState(listing.avatar_url)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -103,18 +108,21 @@ function ListingForm({ listing, onSaved }: { listing: Listing; onSaved: (l: List
     professional_type: (type || 'agent') as ProfessionalType,
     licensed_profession: licensed,
     license_verified: listing.license_verified && license === listing.license_number && type === listing.professional_type,
-    license_number: license || null
+    license_number: license || null,
+    avatar_url: avatarUrl
   }
 
   return (
     <div className="my-listing">
-      <div className="page-header">
-        <h1>My Listing</h1>
-        <p>
-          This is what homeowners see in the SonderBe directory. Listings appear A–Z by business name; placement
-          can't be bought. Homeowners who choose you appear under <Link to="/investor">My Clients</Link>.
-        </p>
-      </div>
+      {embedded ? (
+        <h2 className="section-heading">Directory listing (public)</h2>
+      ) : (
+        <div className="page-header"><h1>My Listing</h1></div>
+      )}
+      <p>
+        This is what homeowners see in the SonderBe directory. Listings appear A–Z by business name; placement
+        can't be bought. Homeowners who choose you appear under <Link to="/investor/clients">Clients</Link>.
+      </p>
 
       <div className="dashboard-card">
         <div className="card-header">
@@ -125,13 +133,28 @@ function ListingForm({ listing, onSaved }: { listing: Listing; onSaved: (l: List
         </div>
         <p>
           Counties: {listing.service_counties.length ? listing.service_counties.join(', ') : 'none yet'}{' '}
-          (<Link to="/investor">change on My Clients</Link>)
+          (<Link to="/investor/clients">change on Clients</Link>)
         </p>
         {type === 'attorney' && (
           <p className="form-note">
             Attorneys are shown as directory listings only: homeowners contact you directly, and SonderBe does not
             send you their details. This is pending legal review of California's lawyer referral rules.
           </p>
+        )}
+      </div>
+
+      <div className="dashboard-card">
+        <ImageUpload
+          label="Your photo or company logo"
+          url={avatarUrl}
+          name={listing.full_name || businessName || 'Professional'}
+          uploadPath="/leads/avatar"
+          field="avatar_url"
+          onUploaded={setAvatarUrl}
+          onRemove={async () => { await apiDelete('/leads/avatar'); setAvatarUrl(null) }}
+        />
+        {type === 'broker' && (
+          <p className="form-note">Run a team? Set up your brokerage and invite your agents under <Link to="/investor/brokerage">My Brokerage</Link>.</p>
         )}
       </div>
 

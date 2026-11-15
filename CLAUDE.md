@@ -25,6 +25,8 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/leads` — subscribed professional (investorOnly): GET open leads in service counties (category counts only) + own clients (contact, item-level checklist, stage, timeline, documents), PUT /service-area, GET/PUT /profile (directory listing; license change clears `license_verified`; listing needs the no-upfront-fee pledge), POST /:id/stage, POST /:id/documents (`{label}` or `{standard:true}`), PATCH/DELETE /:id/documents/:docId, POST /:id/claim (legacy open pool), /:id/release, /:id/close
   - `/api/directory` — any logged-in user: GET ?county=&type= listed + subscribed professionals, A–Z (never paid ranking). `DIRECT_CONTACT_ONLY_TYPES` (attorneys, pending legal review) show contact details and can't be chosen
   - `/api/ads` — GET ?county= active service ads (shuffled, counts views), POST /:id/click
+  - `/api/me` — homeowner only: GET (profile, info, extra emails, household, team), PUT /info, GET /documents (list built from the household), POST/DELETE /emails, POST/PUT/DELETE /household/:id, POST/PUT/DELETE /team/:id
+  - `/api/brokerage` — GET/POST /invite/:token + /join (any logged-in user; invite email must match), then investorOnly: GET/POST/PUT /, POST /logo, POST/DELETE /invites, DELETE /agents/:id, POST /leave, GET /clients (broker's team view)
 - Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, express-rate-limit
 - Dev: tsx (watch mode), typescript
 - Stripe webhook: `app.use('/api/stripe/webhook', express.raw(...))` in `index.ts` BEFORE `express.json()` — a router-level `express.raw()` alone does NOT work (json parses first, raw skips, signature check fails). Verified with a signed test event 2026-09-24
@@ -88,7 +90,34 @@ Migration `003_directory_and_tracker.sql` (profile listing fields, `match_reques
   `cd server && npm run seed:demo` wipes and recreates demo accounts (`*@example.com`, password `SonderDemo-2026`) and ads.
   The seed script refuses the live project ref.
 - Not built yet: admin screens for ads and license verification (set `license_verified` / ads in the DB for now);
-  003 is not applied to the live project.
+  003 and 004 are not applied to the live project.
+
+## Homeowner information, multiple professionals, brokerages (2026-11-15, same branch)
+
+Migration `004_homeowner_info_teams_brokerages.sql`. Decisions: household income = who earns + income TYPE, never amounts;
+one SonderBe case per category (`match_requests.category` real_estate | legal, `CATEGORY_OF` in matching.ts); attorneys
+stay direct-contact (homeowner records them in `team_contacts`, SonderBe never contacts them); broker owns a `brokerages`
+row and pays, agents join by invite link (`/#/join/<token>`) and are covered via `access.ts` `professionalsWithAccess`
+(used by `investorOnly` and the directory).
+- `household.ts` `documentsForHousehold` builds the document list (one set per earner + contribution letter for
+  non-borrower earners); `guessDocType` labels typed documents; doc types drive the example viewer
+  (`src/lib/documentTypes.ts` + `components/case/DocumentExample.tsx`, all sample data made up).
+- Professionals see "My Information" only on requests whose stored consent text contains "My Information"
+  (`MY_INFORMATION_CONSENT_MARKER`); older requests consented to less.
+- Images: public bucket `profile-images` (created by 004); backend uploads only, type sniffed from bytes (`images.ts`).
+- Hardship letter (`/portal/hardship-letter`) is generated client-side and never stored.
+- **Professional portal** (`/investor`; professionals visiting `/portal` are redirected there): Dashboard (`GET /api/leads/summary`),
+  Clients (`/investor/clients#case-<id>`), Documents (every client's checklist, filtered: to review / waiting / due for update /
+  received), My Information (`professional_info`: office, phones, fax, document email + instructions shown to their clients,
+  plus the public listing; `/investor/listing` redirects there). Migration `005_pro_info_document_rounds_notes.sql`.
+- **Document rounds:** "Request again" (`POST /api/leads/:id/documents/:docId/request-again {reason}`) starts a new round
+  (sent/received cleared, `last_received_at` kept, `case_document_history` logs every action). `refresh_days` (defaults per
+  type in `household.ts DEFAULT_REFRESH_DAYS`, e.g. bank statements 30) makes a received copy show "due for update";
+  `POST /:id/documents/request-updates` re-requests all due documents for a client.
+- **Notes:** `case_notes` per case, optionally per document; both sides post (`/api/leads/:id/notes`, `/api/match/:id/notes`);
+  unread = the other side's notes after `*_notes_read_at`.
+- Dark mode: theme tokens in `src/index.css` (`--color-surface`, `--color-heading`, `--tone-*`); never hard-code colors
+  in `App.css`. Choice stored in localStorage `sonderbe-theme`, applied by a script in `index.html`.
 
 ## Investor Portal (data features, now hidden from nav)
 

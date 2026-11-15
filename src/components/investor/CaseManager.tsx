@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { apiPost, apiPatch, apiDelete } from '../../lib/api'
+import { apiPost } from '../../lib/api'
 import { stages, outcomes } from '../../lib/constants'
 import type { Stage } from '../../lib/constants'
-import { formatDate } from '../../lib/format'
-import type { CaseDocument, CaseEvent } from '../../hooks/useMatch'
+import type { CaseDocument, CaseEvent, CaseNote } from '../../hooks/useMatch'
 import { StageProgress, CaseTimeline } from '../case/CaseParts'
+import { NotesThread } from '../case/NotesThread'
+import { ProDocumentRow } from './ProDocumentRow'
 
 export type ManagedCase = {
   id: string
@@ -15,11 +16,18 @@ export type ManagedCase = {
   outcome: string | null
   events: CaseEvent[]
   documents: CaseDocument[]
+  notes: CaseNote[]
+  unread_notes: number
 }
+
 
 // The professional's controls for one active case: move the stage, set the next step the
 // homeowner sees, and keep the document list (homeowner marks sent, professional marks received).
-export function CaseManager({ lead, onChanged }: { lead: ManagedCase; onChanged: () => void }) {
+export function CaseManager({ lead, onChanged, canUseHousehold = false }: {
+  lead: ManagedCase
+  onChanged: () => void
+  canUseHousehold?: boolean
+}) {
   const firstName = lead.contact_name.split(/\s+/)[0]
   const [stage, setStage] = useState<Stage>(lead.stage)
   const [outcome, setOutcome] = useState(lead.outcome ?? '')
@@ -63,7 +71,15 @@ export function CaseManager({ lead, onChanged }: { lead: ManagedCase; onChanged:
     if (await run(() => apiPost(`/leads/${lead.id}/documents`, { label: newDoc }))) setNewDoc('')
   }
 
-  const received = lead.documents.filter(d => d.received_at).length
+  const received = lead.documents.filter(d => d.received_at && !d.stale).length
+  const due = lead.documents.filter(d => d.stale).length
+  const generalNotes = lead.notes.filter(n => !n.document_id)
+  const unreadAfter = (docId: string | null) => lead.unread_notes > 0 &&
+    lead.notes.some(n => n.document_id === docId && n.author_role === 'homeowner')
+  const sendNote = async (body: string, documentId: string | null) => {
+    await apiPost(`/leads/${lead.id}/notes`, { body, document_id: documentId })
+    onChanged()
+  }
 
   return (
     <div className="case-manager">
@@ -107,44 +123,50 @@ export function CaseManager({ lead, onChanged }: { lead: ManagedCase; onChanged:
 
       <div className="case-docs">
         <h4>
-          Documents {lead.documents.length > 0 && <span className="lead-readiness">{received} of {lead.documents.length} received</span>}
+          Documents {lead.documents.length > 0 && <span className="lead-readiness">{received} of {lead.documents.length} received{due ? ` · ${due} due for update` : ''}</span>}
         </h4>
+        {due > 0 && (
+          <button type="button" className="btn btn-primary btn-small" disabled={busy}
+            onClick={() => run(() => apiPost(`/leads/${lead.id}/documents/request-updates`))}>
+            Ask {firstName} for updated copies ({due})
+          </button>
+        )}
         {lead.documents.length === 0 ? (
           <p className="empty-state">
             No documents requested yet.{' '}
-            <button type="button" className="btn btn-secondary btn-small" disabled={busy}
-              onClick={() => run(() => apiPost(`/leads/${lead.id}/documents`, { standard: true }))}>
-              Add the standard short-sale list
-            </button>
+            {canUseHousehold ? (
+              <button type="button" className="btn btn-primary btn-small" disabled={busy}
+                onClick={() => run(() => apiPost(`/leads/${lead.id}/documents`, { fromHousehold: true }))}>
+                Build the list from {firstName}'s household
+              </button>
+            ) : (
+              <button type="button" className="btn btn-secondary btn-small" disabled={busy}
+                onClick={() => run(() => apiPost(`/leads/${lead.id}/documents`, { standard: true }))}>
+                Add the standard short-sale list
+              </button>
+            )}
           </p>
         ) : (
           <ul className="doc-checklist">
             {lead.documents.map(doc => (
-              <li key={doc.id} className={`doc-row doc-${doc.received_at ? 'received' : doc.sent_at ? 'sent' : 'todo'}`}>
-                <label className="doc-check">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(doc.received_at)}
-                    disabled={busy}
-                    onChange={e => run(() => apiPatch(`/leads/${lead.id}/documents/${doc.id}`, { received: e.target.checked }))}
-                  />
-                  <span className="doc-label">{doc.label}</span>
-                </label>
-                <span className={`doc-status-chip ${doc.received_at ? 'received' : doc.sent_at ? 'sent' : 'todo'}`}>
-                  {doc.received_at ? `✓ Received ${formatDate(doc.received_at)}`
-                    : doc.sent_at ? `${firstName} sent it ${formatDate(doc.sent_at)}`
-                    : 'Waiting'}
-                </span>
-                {doc.homeowner_note && <span className="form-note">“{doc.homeowner_note}”</span>}
-                {!doc.sent_at && !doc.received_at && (
-                  <button type="button" className="btn-link" disabled={busy}
-                    onClick={() => run(() => apiDelete(`/leads/${lead.id}/documents/${doc.id}`))}>
-                    Remove
-                  </button>
-                )}
-              </li>
+              <ProDocumentRow
+                key={doc.id}
+                caseId={lead.id}
+                doc={doc}
+                firstName={firstName}
+                notes={lead.notes.filter(n => n.document_id === doc.id)}
+                unread={unreadAfter(doc.id)}
+                onChanged={onChanged}
+                onNote={(body, documentId) => sendNote(body, documentId)}
+              />
             ))}
           </ul>
+        )}
+        {lead.documents.length > 0 && canUseHousehold && (
+          <button type="button" className="btn-link" disabled={busy}
+            onClick={() => run(() => apiPost(`/leads/${lead.id}/documents`, { fromHousehold: true }))}>
+            Add anything missing from {firstName}'s household (e.g. after they add someone)
+          </button>
         )}
         <form className="add-doc" onSubmit={addDoc}>
           <input value={newDoc} onChange={e => setNewDoc(e.target.value)} maxLength={200}
@@ -153,6 +175,17 @@ export function CaseManager({ lead, onChanged }: { lead: ManagedCase; onChanged:
         </form>
         <p className="form-note">Check a document off once you have it. Ask {firstName} to send files to you directly, not through SonderBe.</p>
       </div>
+
+      <details className="case-notes" open={lead.unread_notes > 0}
+        onToggle={e => { if ((e.target as HTMLDetailsElement).open && lead.unread_notes > 0) apiPost(`/leads/${lead.id}/notes/read`).then(onChanged).catch(() => {}) }}>
+        <summary>
+          Notes with {firstName} ({lead.notes.length}){lead.unread_notes > 0 && <span className="unread-badge">{lead.unread_notes} new</span>}
+        </summary>
+        <NotesThread notes={generalNotes} viewer="professional" otherName={firstName} onSend={body => sendNote(body, null)} />
+        {lead.notes.length > generalNotes.length && (
+          <p className="form-note">Notes about a specific document are under that document's Notes link.</p>
+        )}
+      </details>
 
       <details>
         <summary>Timeline ({lead.events.length})</summary>

@@ -11,7 +11,8 @@ import dotenv from 'dotenv'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CONSENT_TEXT } from '../src/matching.js'
+import { CHOSEN_CONSENT_TEXT } from '../src/matching.js'
+import { randomBytes } from 'node:crypto'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const testEnv = dotenv.parse(readFileSync(join(here, '..', '.env.test.local')))
@@ -27,9 +28,9 @@ const db = createClient(url, key, { auth: { persistSession: false } })
 export const DEMO_PASSWORD = 'SonderDemo-2026'
 const DEMO_DOMAIN = '@example.com'
 
-function must<T>(result: { data: T; error: unknown }, what: string): T {
+function must<T>(result: { data: T | null; error: unknown }, what: string): T {
   if (result.error) throw new Error(`${what}: ${JSON.stringify(result.error)}`)
-  return result.data
+  return result.data as T
 }
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString()
@@ -68,6 +69,8 @@ async function createUser(email: string, fullName: string, phone: string | null)
 }
 
 interface ProSeed {
+  key: string
+  ownSubscription?: boolean
   email: string
   full_name: string
   phone: string
@@ -82,6 +85,7 @@ interface ProSeed {
 
 const PROS: ProSeed[] = [
   {
+    key: 'agent',
     email: 'pro.agent@example.com', full_name: 'Maria Lopez', phone: '(213) 555-0141',
     professional_type: 'agent', business_name: 'Lopez Short Sale Realty',
     bio: 'Short-sale listing agent for 12 years. I work with your lender so the sale closes before the auction date. Paid only from the sale at closing.',
@@ -89,6 +93,7 @@ const PROS: ProSeed[] = [
     service_counties: ['Los Angeles', 'Orange']
   },
   {
+    key: 'broker',
     email: 'pro.broker@example.com', full_name: 'David Chen', phone: '(562) 555-0187',
     professional_type: 'broker', business_name: 'Harbor Brokerage Group',
     bio: 'Broker with a team of four short-sale agents. Bilingual English/Mandarin.',
@@ -96,6 +101,7 @@ const PROS: ProSeed[] = [
     service_counties: ['Los Angeles', 'Orange', 'Riverside']
   },
   {
+    key: 'attorney',
     email: 'pro.attorney@example.com', full_name: 'Sarah Kim', phone: '(310) 555-0112',
     professional_type: 'attorney', business_name: 'Kim Homeowner Defense Law',
     bio: 'Foreclosure defense and bankruptcy attorney. Free first consultation.',
@@ -103,6 +109,7 @@ const PROS: ProSeed[] = [
     service_counties: ['Los Angeles']
   },
   {
+    key: 'legal',
     email: 'pro.legal@example.com', full_name: 'James Carter', phone: '(951) 555-0166',
     professional_type: 'legal_professional', business_name: 'Carter Document Services',
     bio: 'Registered legal document assistant. I help prepare paperwork; I do not give legal advice.',
@@ -110,11 +117,20 @@ const PROS: ProSeed[] = [
     service_counties: ['Los Angeles', 'Riverside']
   },
   {
+    key: 'negotiator',
     email: 'pro.negotiator@example.com', full_name: 'Tony Reyes', phone: '(818) 555-0199',
     professional_type: 'negotiator', business_name: 'Reyes Lender Negotiation',
     bio: 'I negotiate with lenders on short-sale approvals for listing agents and homeowners.',
     website: null, license_number: null, license_verified: false,
     service_counties: ['Los Angeles']
+  },
+  {
+    key: 'harbor_agent', ownSubscription: false,
+    email: 'pro.harbor@example.com', full_name: 'Priya Shah', phone: '(562) 555-0190',
+    professional_type: 'agent', business_name: 'Harbor Brokerage Group',
+    bio: 'Short-sale specialist on the Harbor team. Hablo español.',
+    website: null, license_number: 'DEMO-DRE-02223333', license_verified: true,
+    service_counties: ['Los Angeles', 'Orange']
   }
 ]
 
@@ -134,15 +150,33 @@ async function seedPros() {
       listed: true,
       service_counties: p.service_counties
     }).eq('id', id), `profile ${p.email}`)
-    must(await db.from('investor_subscriptions').insert({
-      user_id: id,
-      stripe_customer_id: `cus_demo_${p.professional_type}`,
-      status: 'active',
-      current_period_start: daysAgo(10),
-      current_period_end: daysAgo(-20)
-    }), `subscription ${p.email}`)
-    ids[p.professional_type] = id
+    if (p.ownSubscription !== false) {
+      must(await db.from('investor_subscriptions').insert({
+        user_id: id,
+        stripe_customer_id: `cus_demo_${p.key}`,
+        status: 'active',
+        current_period_start: daysAgo(10),
+        current_period_end: daysAgo(-20)
+      }), `subscription ${p.email}`)
+    }
+    ids[p.key] = id
   }
+
+  must(await db.from('professional_info').insert({
+    user_id: ids.agent, office_street: '500 Example Blvd', office_unit: 'Suite 210', office_city: 'Pasadena', office_state: 'CA',
+    office_zip: '91101', office_phone: '(626) 555-0150', fax: '(626) 555-0151', document_email: 'docs.lopez@example.com',
+    document_instructions: 'Email PDFs with your last name in the subject line. Phone photos are fine if every corner is visible.',
+    office_hours: 'Mon–Fri 9–6, Sat by appointment'
+  }), 'professional info')
+
+  // David (broker) runs Harbor Brokerage Group; Priya is on his team, covered by his subscription
+  const brokerage = must(await db.from('brokerages').insert({
+    owner_id: ids.broker, name: 'Harbor Brokerage Group', website: 'https://example.com/harbor', dre_number: 'DEMO-CORP-0099'
+  }).select('id').single(), 'brokerage')
+  must(await db.from('profiles').update({ brokerage_id: brokerage.id }).in('id', [ids.broker, ids.harbor_agent]), 'brokerage members')
+  must(await db.from('brokerage_invites').insert({
+    brokerage_id: brokerage.id, email: 'new.agent@example.com', token: randomBytes(24).toString('base64url')
+  }), 'brokerage invite')
   return ids
 }
 
@@ -154,12 +188,21 @@ type Stage = 'matched' | 'first_contact' | 'documents_requested' | 'documents_re
 
 interface CaseSeed {
   pro: string
+  category?: 'real_estate' | 'legal'
   situation: string
   stage: Stage
   next_step: string
   events: { stage: Stage; note: string; days: number }[]
-  documents?: { label: string; sent?: number; received?: number; note?: string }[]
+  documents?: { label: string; type?: string; sent?: number; received?: number; note?: string; round?: number; reason?: string; lastReceived?: number }[]
+  notes?: { by: 'homeowner' | 'professional'; body: string; days: number; doc?: number }[]
+  notesReadByPro?: number
 }
+
+const REFRESH: Record<string, number | null> = {
+  bank_statement: 30, pay_stub: 30, mortgage_statement: 30, profit_loss: 90, irs_4506c: 120, benefit_letter: 365
+}
+
+interface MemberSeed { full_name: string; relationship: string; on_mortgage?: boolean; income_types: string[]; employer?: string }
 
 interface HomeownerSeed {
   email: string
@@ -167,6 +210,13 @@ interface HomeownerSeed {
   phone: string
   checklist: [number, number][] // [category_index, item_index] already checked
   case?: CaseSeed
+  legalCase?: CaseSeed
+  info?: Record<string, unknown>
+  selfIncome?: string[]
+  selfEmployer?: string
+  household?: MemberSeed[]
+  emails?: { email: string; label: string }[]
+  team?: Record<string, unknown>[]
 }
 
 const STANDARD_DOCS = [
@@ -176,6 +226,7 @@ const STANDARD_DOCS = [
   'Hardship letter (why you fell behind)',
   'Most recent mortgage statement'
 ]
+const STANDARD_TYPES = ['bank_statement', 'tax_return', 'pay_stub', 'hardship_letter', 'mortgage_statement']
 
 const HOMEOWNERS: HomeownerSeed[] = [
   {
@@ -191,12 +242,29 @@ const HOMEOWNERS: HomeownerSeed[] = [
       events: [
         { stage: 'matched', note: 'You chose Maria Lopez.', days: 3 },
         { stage: 'first_contact', note: 'Left a voicemail and sent an intro email.', days: 1 }
-      ]
+      ],
+      documents: [
+        { label: 'Most recent mortgage statement', type: 'mortgage_statement', sent: 0 },
+        { label: 'Last 2 months of bank statements (all accounts)', type: 'bank_statement' }
+      ],
+      notes: [{ by: 'homeowner', body: 'Is it OK to send the mortgage statement as a phone photo?', days: 0, doc: 0 }]
     }
   },
   {
     email: 'home.docs@example.com', full_name: 'Angela Brooks', phone: '(626) 555-0103',
     checklist: [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1]],
+    info: {
+      property_street: '4180 Example Ave', property_city: 'Pasadena', property_zip: '91101', property_county: 'Los Angeles',
+      mailing_same: true, preferred_contact: 'text', best_time: 'After 5pm', servicer_name: 'Example Home Loan Servicing',
+      hardship_reasons: ['reduced_income', 'medical'],
+      hardship_details: 'In March my hours were cut from 40 to 24 a week, and my husband had surgery in May. We fell three payments behind.'
+    },
+    selfIncome: ['employment'], selfEmployer: 'Acme Logistics',
+    household: [
+      { full_name: 'Marcus Brooks', relationship: 'spouse', on_mortgage: true, income_types: ['disability'] },
+      { full_name: 'Jalen Brooks', relationship: 'child', income_types: ['employment'], employer: 'Fresh Market' }
+    ],
+    emails: [{ email: 'angela.work@example.com', label: 'work' }],
     case: {
       pro: 'agent', situation: 'behind', stage: 'documents_requested',
       next_step: 'Send the remaining documents by email so I can open the short-sale file with your lender.',
@@ -206,12 +274,18 @@ const HOMEOWNERS: HomeownerSeed[] = [
         { stage: 'documents_requested', note: 'Sent the document list.', days: 6 }
       ],
       documents: [
-        { label: STANDARD_DOCS[0], sent: 4, received: 3 },
-        { label: STANDARD_DOCS[1], sent: 2, note: 'Emailed both years as PDFs' },
-        { label: STANDARD_DOCS[2] },
-        { label: STANDARD_DOCS[3] },
-        { label: STANDARD_DOCS[4], sent: 5, received: 5 }
-      ]
+        { label: STANDARD_DOCS[0], type: 'bank_statement', sent: 41, received: 40 },
+        { label: STANDARD_DOCS[1], type: 'tax_return', round: 2, reason: 'The 2024 return is missing Schedule 1.', lastReceived: 3, sent: 1, note: 'Re-sent 2024 with all schedules' },
+        { label: STANDARD_DOCS[2], type: 'pay_stub' },
+        { label: STANDARD_DOCS[3], type: 'hardship_letter' },
+        { label: STANDARD_DOCS[4], type: 'mortgage_statement', sent: 5, received: 5 }
+      ],
+      notes: [
+        { by: 'professional', body: 'Does the Golden Coast statement cover your savings account too?', days: 2, doc: 0 },
+        { by: 'homeowner', body: 'Savings is at a different bank. I can send that one too.', days: 1, doc: 0 },
+        { by: 'homeowner', body: 'Marcus has a doctor visit Thursday, can we talk Friday instead?', days: 0 }
+      ],
+      notesReadByPro: 2
     }
   },
   {
@@ -228,8 +302,28 @@ const HOMEOWNERS: HomeownerSeed[] = [
         { stage: 'submitted_to_lender', note: 'Short-sale package submitted with a $612,000 offer.', days: 21 },
         { stage: 'lender_review', note: 'Lender assigned a negotiator and ordered an appraisal.', days: 4 }
       ],
-      documents: STANDARD_DOCS.map((label, i) => ({ label, sent: 36 - i, received: 31 }))
-    }
+      documents: STANDARD_DOCS.map((label, i) => ({ label, type: STANDARD_TYPES[i], sent: 36 - i, received: 31 }))
+    },
+    legalCase: {
+      pro: 'legal', category: 'legal', situation: 'sale', stage: 'documents_requested',
+      next_step: 'James is preparing your declaration for the court. Send the Notice of Sale.',
+      events: [
+        { stage: 'matched', note: 'You chose James Carter.', days: 12 },
+        { stage: 'documents_requested', note: 'Requested the Notice of Sale and the loan papers.', days: 10 }
+      ],
+      documents: [{ label: 'Notice of Trustee Sale (all pages)', type: 'other' }]
+    },
+    info: {
+      property_street: '77 Harbor View Dr', property_city: 'Long Beach', property_zip: '90802', property_county: 'Los Angeles',
+      mailing_same: false, mailing_street: 'PO Box 1200', mailing_city: 'Long Beach', mailing_state: 'CA', mailing_zip: '90801',
+      preferred_contact: 'phone', servicer_name: 'Sample Mortgage Co.', hardship_reasons: ['business_failure']
+    },
+    selfIncome: ['self_employment'],
+    household: [{ full_name: 'Grace Nguyen', relationship: 'parent', income_types: ['social_security'] }],
+    team: [{
+      role: 'attorney', name: 'Sarah Kim', firm: 'Kim Homeowner Defense Law', phone: '(310) 555-0112',
+      email: 'pro.attorney@example.com', status: 'retained', notes: 'Court hearing on the sale postponement: Dec 3.'
+    }]
   }
 ]
 
@@ -243,39 +337,74 @@ async function seedHomeowners(proIds: Record<string, string>) {
       }))), `checklist ${h.email}`)
     }
 
-    if (!h.case) continue
-    const c = h.case
-    const first = c.events[0].days
-    const request = must(await db.from('match_requests').insert({
-      homeowner_id: id,
-      county: 'Los Angeles',
-      situation: c.situation,
-      contact_name: h.full_name,
-      contact_email: h.email,
-      contact_phone: h.phone,
-      best_time: 'Weekday evenings',
-      consent_text: CONSENT_TEXT,
-      consented_at: daysAgo(first),
-      status: 'claimed',
-      claimed_by: proIds[c.pro],
-      claimed_at: daysAgo(first),
-      stage: c.stage,
-      next_step: c.next_step,
-      stage_updated_at: daysAgo(c.events[c.events.length - 1].days)
-    }).select('id').single(), `match ${h.email}`)
+    if (h.info) must(await db.from('homeowner_info').insert({ user_id: id, ...h.info }), `info ${h.email}`)
+    must(await db.from('household_members').insert([
+      { user_id: id, is_self: true, full_name: h.full_name, relationship: 'self', on_mortgage: true,
+        income_types: h.selfIncome ?? [], employer: h.selfEmployer ?? null, sort_order: 0 },
+      ...(h.household ?? []).map((m, i) => ({
+        user_id: id, is_self: false, full_name: m.full_name, relationship: m.relationship, on_mortgage: m.on_mortgage ?? false,
+        income_types: m.income_types, employer: m.employer ?? null, sort_order: i + 1
+      }))
+    ]), `household ${h.email}`)
+    if (h.emails) must(await db.from('homeowner_emails').insert(h.emails.map(e => ({ user_id: id, ...e }))), `emails ${h.email}`)
+    if (h.team) must(await db.from('team_contacts').insert(h.team.map(t => ({ user_id: id, ...t }))), `team ${h.email}`)
 
-    must(await db.from('case_events').insert(c.events.map(e => ({
-      match_request_id: request.id, stage: e.stage, note: e.note,
-      created_by: e.stage === 'matched' ? id : proIds[c.pro], created_at: daysAgo(e.days)
-    }))), `events ${h.email}`)
+    for (const c of [h.case, h.legalCase]) {
+      if (c) await seedCase(id, h, c, proIds)
+    }
+  }
+}
 
-    if (c.documents) {
-      must(await db.from('case_documents').insert(c.documents.map((d, i) => ({
-        match_request_id: request.id, label: d.label, sort_order: i,
-        homeowner_note: d.note ?? null,
-        sent_at: d.sent !== undefined ? daysAgo(d.sent) : null,
-        received_at: d.received !== undefined ? daysAgo(d.received) : null
-      }))), `documents ${h.email}`)
+async function seedCase(id: string, h: HomeownerSeed, c: CaseSeed, proIds: Record<string, string>) {
+  const pro = PROS.find(p => p.key === c.pro)!
+  const first = c.events[0].days
+  const request = must(await db.from('match_requests').insert({
+    homeowner_id: id,
+    category: c.category ?? 'real_estate',
+    county: 'Los Angeles',
+    situation: c.situation,
+    contact_name: h.full_name,
+    contact_email: h.email,
+    contact_phone: h.phone,
+    best_time: 'Weekday evenings',
+    consent_text: `${CHOSEN_CONSENT_TEXT} Professional chosen: ${pro.full_name}, ${pro.business_name}.`,
+    consented_at: daysAgo(first),
+    status: 'claimed',
+    claimed_by: proIds[c.pro],
+    claimed_at: daysAgo(first),
+    stage: c.stage,
+    next_step: c.next_step,
+    stage_updated_at: daysAgo(c.events[c.events.length - 1].days)
+  }).select('id').single(), `match ${h.email}`)
+
+  must(await db.from('case_events').insert(c.events.map(e => ({
+    match_request_id: request.id, stage: e.stage, note: e.note,
+    created_by: e.stage === 'matched' ? id : proIds[c.pro], created_at: daysAgo(e.days)
+  }))), `events ${h.email}`)
+
+  if (c.documents) {
+    const docs = must(await db.from('case_documents').insert(c.documents.map((d, i) => ({
+      match_request_id: request.id, label: d.label, sort_order: i, doc_type: d.type ?? 'other',
+      homeowner_note: d.note ?? null,
+      sent_at: d.sent !== undefined ? daysAgo(d.sent) : null,
+      received_at: d.received !== undefined ? daysAgo(d.received) : null,
+      refresh_days: REFRESH[d.type ?? 'other'] ?? null,
+      round: d.round ?? 1,
+      request_reason: d.reason ?? null,
+      last_received_at: d.lastReceived !== undefined ? daysAgo(d.lastReceived) : null
+    }))).select('id, sort_order'), `documents ${h.email}`).sort((a, b) => a.sort_order - b.sort_order)
+    if (c.notes) {
+      must(await db.from('case_notes').insert(c.notes.map(n => ({
+        match_request_id: request.id,
+        document_id: n.doc !== undefined ? docs[n.doc].id : null,
+        author_id: n.by === 'homeowner' ? id : proIds[c.pro],
+        author_role: n.by,
+        body: n.body,
+        created_at: daysAgo(n.days)
+      }))), `notes ${h.email}`)
+    }
+    if (c.notesReadByPro !== undefined) {
+      must(await db.from('match_requests').update({ professional_notes_read_at: daysAgo(c.notesReadByPro) }).eq('id', request.id), 'notes read')
     }
   }
 }
@@ -337,7 +466,8 @@ async function main() {
 
   console.log(`\nDemo logins (password for all: ${DEMO_PASSWORD})`)
   console.log('  Homeowners: home.new / home.matched / home.docs / home.lender @example.com')
-  console.log('  Professionals: pro.agent / pro.broker / pro.attorney / pro.legal / pro.negotiator @example.com')
+  console.log('  Professionals: pro.agent / pro.broker / pro.attorney / pro.legal / pro.negotiator / pro.harbor @example.com')
+  console.log('  Brokerage: pro.broker runs Harbor Brokerage Group; pro.harbor is on the team')
   console.log('  Admin: admin@example.com')
 }
 

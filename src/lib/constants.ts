@@ -288,3 +288,69 @@ export const adCategoryLabels: Record<string, string> = {
   rental_housing: 'Rental housing',
   other: 'Other services'
 }
+
+// ---------------------------------------------------------------------------
+// Homeowner information + multiple professionals. Must match server/src/matching.ts.
+// ---------------------------------------------------------------------------
+
+export type Category = 'real_estate' | 'legal'
+
+export const categoryOf: Record<ProfessionalType, Category> = {
+  agent: 'real_estate',
+  broker: 'real_estate',
+  negotiator: 'real_estate',
+  legal_professional: 'legal',
+  attorney: 'legal'
+}
+
+export const categoryLabels: Record<Category, string> = {
+  real_estate: 'Real estate professional',
+  legal: 'Legal help'
+}
+
+export const relationships = [
+  { value: 'spouse', label: 'Spouse' },
+  { value: 'partner', label: 'Partner' },
+  { value: 'child', label: 'Son or daughter' },
+  { value: 'parent', label: 'Parent' },
+  { value: 'relative', label: 'Other relative' },
+  { value: 'roommate', label: 'Roommate or tenant' },
+  { value: 'other', label: 'Other' }
+]
+
+export const relationshipLabel = (value: string) =>
+  value === 'self' ? 'You' : relationships.find(r => r.value === value)?.label ?? value
+
+export const incomeTypes = [
+  { value: 'employment', label: 'Job (paid by an employer)' },
+  { value: 'self_employment', label: 'Self-employed / own business' },
+  { value: 'social_security', label: 'Social Security' },
+  { value: 'pension', label: 'Pension or retirement' },
+  { value: 'disability', label: 'Disability' },
+  { value: 'unemployment', label: 'Unemployment' },
+  { value: 'rental', label: 'Rental income' },
+  { value: 'child_support', label: 'Child support or alimony' },
+  { value: 'other', label: 'Other income' }
+]
+
+export const incomeLabel = (value: string) => incomeTypes.find(t => t.value === value)?.label ?? value
+
+export const hardshipReasons = [
+  { value: 'job_loss', label: 'Lost a job', letter: 'lost my job' },
+  { value: 'reduced_income', label: 'Income went down', letter: 'had my income reduced' },
+  { value: 'medical', label: 'Medical bills or illness', letter: 'faced a serious illness and medical bills' },
+  { value: 'divorce', label: 'Divorce or separation', letter: 'went through a divorce or separation' },
+  { value: 'death', label: 'Death in the family', letter: 'lost a member of my household' },
+  { value: 'disability', label: 'Disability', letter: 'became disabled' },
+  { value: 'business_failure', label: 'Business slowed or closed', letter: 'saw my business slow down or close' },
+  { value: 'increased_expenses', label: 'Expenses went up', letter: 'had my expenses go up sharply' },
+  { value: 'disaster', label: 'Natural disaster', letter: 'was affected by a natural disaster' },
+  { value: 'other', label: 'Something else', letter: 'faced an unexpected hardship' }
+]
+
+export const teamStatuses = [
+  { value: 'contacted', label: 'Contacted' },
+  { value: 'consultation', label: 'Consultation scheduled' },
+  { value: 'retained', label: 'Hired (retained)' },
+  { value: 'done', label: 'Finished' }
+]

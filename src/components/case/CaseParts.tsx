@@ -57,17 +57,34 @@ export function LicenseBadge({ pro }: { pro: Pick<DirectoryEntry, 'licensed_prof
 }
 
 type HeaderPro = Partial<Pick<DirectoryEntry, 'full_name' | 'business_name' |
-  'professional_type' | 'licensed_profession' | 'license_verified' | 'license_number'>>
+  'professional_type' | 'licensed_profession' | 'license_verified' | 'license_number' | 'avatar_url' | 'brokerage'>>
+
+// Photo, or initials when there is none
+export function Avatar({ url, name, size = 56, square = false }: { url?: string | null; name: string; size?: number; square?: boolean }) {
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase()).join('') || '?'
+  const style = { width: size, height: size, fontSize: size * 0.38 }
+  return url
+    ? <img className={`avatar ${square ? 'square' : ''}`} src={url} alt="" style={style} />
+    : <span className={`avatar avatar-initials ${square ? 'square' : ''}`} style={style} aria-hidden="true">{initials}</span>
+}
 
 export function ProfessionalHeader({ pro }: { pro: HeaderPro }) {
+  const name = pro.full_name || pro.business_name || 'Professional'
   return (
     <div className="pro-header">
-      <div>
+      <Avatar url={pro.avatar_url} name={name} />
+      <div className="pro-header-text">
         <h3>{pro.business_name || pro.full_name || 'Professional'}</h3>
         <div className="pro-subtitle">
           {pro.business_name && pro.full_name && <>{pro.full_name} · </>}
           {professionalTypeLabel(pro.professional_type)}
         </div>
+        {pro.brokerage && (
+          <div className="pro-brokerage">
+            <Avatar url={pro.brokerage.logo_url} name={pro.brokerage.name} size={20} square />
+            <span>{pro.brokerage.name}</span>
+          </div>
+        )}
       </div>
       {pro.licensed_profession !== undefined && (
         <LicenseBadge pro={{
