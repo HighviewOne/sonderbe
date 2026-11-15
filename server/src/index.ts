@@ -20,6 +20,7 @@ import directoryRoutes from './routes/directory.js'
 import adsRoutes from './routes/ads.js'
 import meRoutes from './routes/me.js'
 import brokerageRoutes from './routes/brokerage.js'
+import accountRoutes from './routes/account.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -64,6 +65,7 @@ app.use('/api/directory', directoryRoutes)
 app.use('/api/ads', adsRoutes)
 app.use('/api/me', meRoutes)
 app.use('/api/brokerage', brokerageRoutes)
+app.use('/api/account', accountRoutes)
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }))
 app.use(errorHandler)

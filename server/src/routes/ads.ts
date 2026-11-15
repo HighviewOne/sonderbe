@@ -22,6 +22,23 @@ function shuffle<T>(items: T[]): T[] {
   return a
 }
 
+// GET /api/ads/report/:token — the advertiser's private report (no login; the link is the key)
+router.get('/report/:token', asyncHandler(async (req, res) => {
+  const token = String(req.params.token)
+  if (token.length < 20 || token.length > 60) {
+    res.status(404).json({ error: 'Report not found' })
+    return
+  }
+  const { data, error } = await supabaseAdmin.from('service_ads')
+    .select('business_name, category, headline, counties, active, starts_on, ends_on, view_count, click_count, created_at')
+    .eq('report_token', token).maybeSingle()
+  if (error || !data) {
+    res.status(404).json({ error: 'Report not found' })
+    return
+  }
+  res.json(data)
+}))
+
 // GET /api/ads?county=Los Angeles
 router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const county = typeof req.query.county === 'string' ? req.query.county : ''

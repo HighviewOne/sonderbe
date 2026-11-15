@@ -87,8 +87,9 @@ export function GetMatched() {
         const active = current && current.request.status === 'claimed' ? current : null
         return (
           <div key={category} className="category-block">
-            {active ? (
-              <MyCase caseData={active} markSent={markSent} withdraw={withdraw} sendNote={sendNote} markNotesRead={markNotesRead} />
+            {active && finding !== category ? (
+              <MyCase caseData={active} markSent={markSent} withdraw={withdraw} sendNote={sendNote}
+                markNotesRead={markNotesRead} onChooseNew={() => setFinding(category)} />
             ) : finding === category ? (
               <div className="dashboard-card">
                 <FindProfessional

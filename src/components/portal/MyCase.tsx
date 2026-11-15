@@ -13,10 +13,11 @@ type Props = {
   withdraw: (requestId: string) => Promise<void>
   sendNote: (requestId: string, body: string, documentId: string | null) => Promise<void>
   markNotesRead: (requestId: string) => Promise<void>
+  onChooseNew: () => void
 }
 
 // One active case: professional, stage, next step, documents and timeline
-export function MyCase({ caseData, markSent, withdraw, sendNote, markNotesRead }: Props) {
+export function MyCase({ caseData, markSent, withdraw, sendNote, markNotesRead, onChooseNew }: Props) {
   const { request, professional, events, documents, notes, unread_notes } = caseData
   const office = professional?.office
   const [withdrawing, setWithdrawing] = useState(false)
@@ -42,6 +43,14 @@ export function MyCase({ caseData, markSent, withdraw, sendNote, markNotesRead }
 
   return (
     <section className="case-section" aria-label={categoryLabels[request.category]}>
+      {caseData.professional_status === 'inactive' && (
+        <div className="dashboard-card warning-card" role="status">
+          <strong>{ProName}'s SonderBe account is no longer active.</strong> They can't update your case here, and
+          it will close soon. They may still contact you directly. If you'd like help from someone else, your
+          information and document list carry over.{' '}
+          <button type="button" className="btn btn-primary btn-small" onClick={onChooseNew}>Choose someone new</button>
+        </div>
+      )}
       <div className="dashboard-card">
         <div className="case-kicker">{categoryLabels[request.category]}</div>
         {professional ? (

@@ -11,7 +11,8 @@ import {
   AdminPage,
   InvestorPage,
   InvestorSubscribePage,
-  JoinBrokeragePage
+  JoinBrokeragePage,
+  AdReportPage
 } from './pages'
 import './App.css'
 
@@ -36,6 +37,7 @@ function App() {
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/ad-report/:token" element={<AdReportPage />} />
         <Route
           path="/portal/*"
           element={

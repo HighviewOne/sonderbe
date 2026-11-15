@@ -71,6 +71,8 @@ async function createUser(email: string, fullName: string, phone: string | null)
 interface ProSeed {
   key: string
   ownSubscription?: boolean
+  // Demo the lapse states: 'grace' = payment failing for 3 days, 'read_only' = ended 2 days ago
+  lapse?: 'grace' | 'read_only'
   email: string
   full_name: string
   phone: string
@@ -131,6 +133,22 @@ const PROS: ProSeed[] = [
     bio: 'Short-sale specialist on the Harbor team. Hablo español.',
     website: null, license_number: 'DEMO-DRE-02223333', license_verified: true,
     service_counties: ['Los Angeles', 'Orange']
+  },
+  {
+    key: 'grace', lapse: 'grace',
+    email: 'pro.grace@example.com', full_name: 'Gina Torres', phone: '(805) 555-0131',
+    professional_type: 'agent', business_name: 'Torres Home Solutions',
+    bio: 'Demo account: card payment failing, still in the 14-day grace period.',
+    website: null, license_number: 'DEMO-DRE-04445555', license_verified: true,
+    service_counties: ['Ventura', 'Los Angeles']
+  },
+  {
+    key: 'lapsed', lapse: 'read_only',
+    email: 'pro.lapsed@example.com', full_name: 'Leo Park', phone: '(909) 555-0177',
+    professional_type: 'agent', business_name: 'Park Realty Partners',
+    bio: 'Demo account: subscription ended, read-only for 14 days.',
+    website: null, license_number: 'DEMO-DRE-06667777', license_verified: true,
+    service_counties: ['San Bernardino', 'Los Angeles']
   }
 ]
 
@@ -154,7 +172,9 @@ async function seedPros() {
       must(await db.from('investor_subscriptions').insert({
         user_id: id,
         stripe_customer_id: `cus_demo_${p.key}`,
-        status: 'active',
+        status: p.lapse === 'grace' ? 'past_due' : p.lapse === 'read_only' ? 'canceled' : 'active',
+        past_due_since: p.lapse === 'grace' ? daysAgo(3) : null,
+        ended_at: p.lapse === 'read_only' ? daysAgo(2) : null,
         current_period_start: daysAgo(10),
         current_period_end: daysAgo(-20)
       }), `subscription ${p.email}`)
@@ -229,6 +249,24 @@ const STANDARD_DOCS = [
 const STANDARD_TYPES = ['bank_statement', 'tax_return', 'pay_stub', 'hardship_letter', 'mortgage_statement']
 
 const HOMEOWNERS: HomeownerSeed[] = [
+  {
+    email: 'home.stranded@example.com', full_name: 'Sam Rivera', phone: '(909) 555-0105',
+    checklist: [[0, 0]],
+    info: { property_street: '12 Demo Ct', property_city: 'Fontana', property_zip: '92335', property_county: 'San Bernardino', mailing_same: true, hardship_reasons: ['job_loss'] },
+    selfIncome: ['unemployment'],
+    case: {
+      pro: 'lapsed', situation: 'behind', stage: 'documents_requested',
+      next_step: 'Send your unemployment benefit letter.',
+      events: [
+        { stage: 'matched', note: 'You chose Leo Park.', days: 20 },
+        { stage: 'documents_requested', note: 'Sent the document list.', days: 15 }
+      ],
+      documents: [
+        { label: 'Your unemployment benefit letter and payment history', type: 'benefit_letter' },
+        { label: 'Most recent mortgage statement', type: 'mortgage_statement', sent: 14, received: 13 }
+      ]
+    }
+  },
   {
     email: 'home.new@example.com', full_name: 'Linda Park', phone: '(213) 555-0101',
     checklist: [[0, 0], [0, 1]]
@@ -361,7 +399,7 @@ async function seedCase(id: string, h: HomeownerSeed, c: CaseSeed, proIds: Recor
   const request = must(await db.from('match_requests').insert({
     homeowner_id: id,
     category: c.category ?? 'real_estate',
-    county: 'Los Angeles',
+    county: (h.info?.property_county as string | undefined) ?? 'Los Angeles',
     situation: c.situation,
     contact_name: h.full_name,
     contact_email: h.email,
@@ -420,6 +458,7 @@ async function seedAdmin() {
 async function seedAds() {
   must(await db.from('service_ads').insert([
     {
+      contact_name: 'Ana Ruiz', contact_email: 'ana@example.com', monthly_price: 149, report_token: randomBytes(18).toString('base64url'),
       business_name: 'SoCal Gentle Movers', category: 'movers',
       headline: 'Local moves from $95/hour, 2-hour minimum',
       description: 'Licensed, insured household movers. Free in-home or video estimate.',
@@ -427,6 +466,7 @@ async function seedAds() {
       license_label: 'Cal-T', license_number: 'DEMO-190000', counties: ['Los Angeles', 'Orange'], active: true
     },
     {
+      contact_name: 'Ben Ito', contact_email: 'ben@example.com', monthly_price: 99, report_token: randomBytes(18).toString('base64url'),
       business_name: 'StoreSafe Self Storage', category: 'storage',
       headline: 'First month $1 on 10x10 units',
       description: 'Climate-controlled units, month-to-month, no long-term contract.',
@@ -468,6 +508,7 @@ async function main() {
   console.log('  Homeowners: home.new / home.matched / home.docs / home.lender @example.com')
   console.log('  Professionals: pro.agent / pro.broker / pro.attorney / pro.legal / pro.negotiator / pro.harbor @example.com')
   console.log('  Brokerage: pro.broker runs Harbor Brokerage Group; pro.harbor is on the team')
+  console.log('  Lapsed: pro.grace (payment failing, grace), pro.lapsed (ended, read-only; client home.stranded)')
   console.log('  Admin: admin@example.com')
 }
 

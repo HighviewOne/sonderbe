@@ -92,7 +92,11 @@ export function FindProfessional({
           : "Choose one real estate professional in your county. Only the professional you choose sees your details, and it's free for homeowners."}
       </p>
       {previous?.status === 'withdrawn' && <p>You withdrew from your last professional here. You can choose someone new below.</p>}
-      {previous?.status === 'closed' && <p>Your last case here was closed. You can choose again below.</p>}
+      {previous?.status === 'closed' && previous.closed_reason === 'professional_inactive' && (
+        <p>Your last professional is no longer on SonderBe, so that case was closed. Your information and document list carry over to whoever you choose next.</p>
+      )}
+      {previous?.status === 'closed' && previous.closed_reason !== 'professional_inactive' && <p>Your last case here was closed. You can choose again below.</p>}
+      {previous?.status === 'claimed' && <p>Choosing someone new ends your case with your current professional here. Your information and document list carry over.</p>}
 
       <div className="dashboard-card warning-card">
         <strong>Never pay anyone upfront for foreclosure help.</strong> In California it is illegal to charge you

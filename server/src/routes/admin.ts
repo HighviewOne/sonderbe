@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { Router } from 'express'
 import { supabaseAdmin } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
@@ -443,6 +444,131 @@ router.get('/csv-uploads', asyncHandler(async (_req, res) => {
   }
 
   res.json(data)
+}))
+
+// ---------------------------------------------------------------------------
+// Service ads (movers, storage, ...): SonderBe staff set these up for advertisers
+// ---------------------------------------------------------------------------
+const AD_ADMIN_FIELDS = 'id, business_name, category, headline, description, phone, website, license_label, license_number, counties, active, starts_on, ends_on, view_count, click_count, contact_name, contact_email, monthly_price, internal_notes, report_token, created_at, updated_at'
+const AD_CATEGORIES = ['movers', 'storage', 'cleaning', 'rental_housing', 'other']
+const AD_COUNTIES = ['Los Angeles', 'Orange', 'Riverside', 'San Bernardino', 'San Diego', 'Ventura']
+// Ads homeowners must never see on a foreclosure site
+const BLOCKED_AD_WORDS = /\b(loan|refinanc|debt relief|we buy houses|cash for (your )?home|stop (your )?foreclosure|credit repair)/i
+
+function adInput(b: Record<string, unknown>): { error: string } | { row: Record<string, unknown> } {
+  const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max + 1) : null)
+  const row: Record<string, unknown> = {
+    business_name: str(b.business_name, 120),
+    category: b.category,
+    headline: str(b.headline, 120),
+    description: str(b.description, 500),
+    phone: str(b.phone, 30),
+    website: str(b.website, 200),
+    license_label: str(b.license_label, 30),
+    license_number: str(b.license_number, 40),
+    counties: Array.isArray(b.counties) ? [...new Set(b.counties)] : [],
+    active: b.active === true,
+    starts_on: b.starts_on || null,
+    ends_on: b.ends_on || null,
+    contact_name: str(b.contact_name, 120),
+    contact_email: str(b.contact_email, 254),
+    monthly_price: b.monthly_price === '' || b.monthly_price === null || b.monthly_price === undefined ? null : Number(b.monthly_price),
+    internal_notes: str(b.internal_notes, 2000)
+  }
+  if (!row.business_name) return { error: 'Business name is required' }
+  if (!row.headline) return { error: 'Headline is required' }
+  for (const [k, max] of [['business_name', 120], ['headline', 120], ['description', 500], ['internal_notes', 2000]] as const) {
+    if (typeof row[k] === 'string' && (row[k] as string).length > max) return { error: `${k.replace(/_/g, ' ')} is too long (${max} max)` }
+  }
+  if (typeof row.category !== 'string' || !AD_CATEGORIES.includes(row.category)) return { error: 'Choose a category' }
+  if ((row.counties as unknown[]).some(c => typeof c !== 'string' || !AD_COUNTIES.includes(c))) return { error: 'Unknown county' }
+  if (row.active && (row.counties as unknown[]).length === 0) return { error: 'Choose at least one county before turning the ad on' }
+  if (row.website && !/^https?:\/\/\S+$/i.test(row.website as string)) return { error: 'Website must start with http:// or https://' }
+  if (row.contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.contact_email as string)) return { error: 'Contact email is not valid' }
+  if (row.monthly_price !== null && (!Number.isFinite(row.monthly_price) || (row.monthly_price as number) < 0)) return { error: 'Monthly price must be a number' }
+  for (const d of ['starts_on', 'ends_on']) {
+    if (row[d] && (typeof row[d] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row[d] as string))) return { error: 'Dates must be YYYY-MM-DD' }
+  }
+  if (row.starts_on && row.ends_on && (row.ends_on as string) < (row.starts_on as string)) return { error: 'End date is before the start date' }
+  if (row.category === 'movers' && row.active && !row.license_number) {
+    return { error: 'Movers need their Cal-T permit number before the ad can go live' }
+  }
+  if (row.category === 'movers' && !row.license_label) row.license_label = 'Cal-T'
+  const text = `${row.business_name} ${row.headline} ${row.description ?? ''}`
+  if (BLOCKED_AD_WORDS.test(text)) return { error: 'SonderBe does not run ads for loans, debt relief, credit repair, cash home buyers or "stop foreclosure" services' }
+  return { row }
+}
+
+// GET /api/admin/ads
+router.get('/ads', asyncHandler(async (_req, res) => {
+  const { data, error } = await supabaseAdmin.from('service_ads').select(AD_ADMIN_FIELDS).order('created_at', { ascending: false })
+  if (error) {
+    console.error('Failed to load ads:', error)
+    res.status(500).json({ error: 'Failed to load ads' })
+    return
+  }
+  res.json({ ads: data })
+}))
+
+// POST /api/admin/ads
+router.post('/ads', asyncHandler(async (req, res) => {
+  const parsed = adInput(req.body ?? {})
+  if ('error' in parsed) {
+    res.status(400).json({ error: parsed.error })
+    return
+  }
+  const { data, error } = await supabaseAdmin.from('service_ads')
+    .insert({ ...parsed.row, report_token: randomBytes(18).toString('base64url') }).select(AD_ADMIN_FIELDS).single()
+  if (error) {
+    console.error('Failed to create ad:', error)
+    res.status(500).json({ error: 'Failed to create the ad' })
+    return
+  }
+  res.status(201).json(data)
+}))
+
+// PUT /api/admin/ads/:id
+router.put('/ads/:id', asyncHandler(async (req, res) => {
+  const id = String(req.params.id)
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
+  const parsed = adInput(req.body ?? {})
+  if ('error' in parsed) {
+    res.status(400).json({ error: parsed.error })
+    return
+  }
+  const { data, error } = await supabaseAdmin.from('service_ads').update(parsed.row).eq('id', id).select(AD_ADMIN_FIELDS).maybeSingle()
+  if (error || !data) {
+    if (error) console.error('Failed to update ad:', error)
+    res.status(error ? 500 : 404).json({ error: error ? 'Failed to save the ad' : 'Ad not found' })
+    return
+  }
+  res.json(data)
+}))
+
+// POST /api/admin/ads/:id/report-link — create or replace the advertiser's private report link
+router.post('/ads/:id/report-link', asyncHandler(async (req, res) => {
+  const id = String(req.params.id)
+  const { data, error } = await supabaseAdmin.from('service_ads')
+    .update({ report_token: randomBytes(18).toString('base64url') }).eq('id', id).select('report_token').maybeSingle()
+  if (error || !data) {
+    res.status(error ? 500 : 404).json({ error: error ? 'Failed to create the link' : 'Ad not found' })
+    return
+  }
+  res.json(data)
+}))
+
+// DELETE /api/admin/ads/:id
+router.delete('/ads/:id', asyncHandler(async (req, res) => {
+  const id = String(req.params.id)
+  const { data, error } = await supabaseAdmin.from('service_ads').delete().eq('id', id).select('id').maybeSingle()
+  if (error || !data) {
+    res.status(error ? 500 : 404).json({ error: error ? 'Failed to delete the ad' : 'Ad not found' })
+    return
+  }
+  res.json({ ok: true })
 }))
 
 export default router

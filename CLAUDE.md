@@ -126,7 +126,18 @@ row and pays, agents join by invite link (`/#/join/<token>`) and are covered via
 - Counties: Los Angeles, Orange, Riverside, San Bernardino, San Diego, Ventura
 - Admin uploads data via CSV or manual entry
 - Stripe handles subscriptions (checkout, webhook, billing portal)
-- Webhook auto-promotes user role to 'investor' on successful checkout, reverts to 'client' on cancellation
+- Webhook promotes the role to 'investor' on checkout. Since 2026-11-15 it no longer demotes on cancel: it records
+  `past_due_since` / `ended_at` and `access.ts` decides access (active, 14-day grace while payments fail, 14-day read-only
+  after it ends, then ended). Read-only = GET only via `investorOnly` (402 `code: read_only` on writes), hidden from the
+  directory. Homeowners see "account no longer active" and can choose someone new; after read-only ends `GET /api/match`
+  closes the case (`closed_reason = 'professional_inactive'`). Choosing someone new keeps the document list (reset to
+  "to send") and deletes the old professional's notes/timeline/history. Brokerage agents follow their broker's state.
+- **Demo payment bypass:** `DEMO_MODE=true` (only in `server/.env.test.local`) shows "Skip payment (test only)" on
+  `/investor/subscribe` (`POST /api/account/demo-subscription`). `account.ts demoMode()` refuses it for the live project
+  ref no matter what the env says. Never set DEMO_MODE on Render.
+- Ads are managed by admins at `/admin/ads` (`/api/admin/ads` CRUD; blocks loan/debt/credit-repair/cash-buyer ads; movers
+  need a Cal-T number to go live). Each ad has a private report link `/#/ad-report/<token>` (`GET /api/ads/report/:token`,
+  no login). Self-serve advertiser portal deliberately not built yet (revisit at ~15–20 advertisers). Migration 006.
 
 ## Migrated Files (use API instead of direct Supabase)
 

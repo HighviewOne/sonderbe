@@ -131,6 +131,8 @@ router.post('/webhook', asyncHandler(async (req, res) => {
               current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
               current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
               plan_id: process.env.STRIPE_PRICE_ID,
+              past_due_since: null,
+              ended_at: null,
               updated_at: new Date().toISOString()
             })
             .eq('user_id', userId)
@@ -151,7 +153,7 @@ router.post('/webhook', asyncHandler(async (req, res) => {
 
         const { data: sub } = await supabaseAdmin
           .from('investor_subscriptions')
-          .select('user_id')
+          .select('user_id, past_due_since, ended_at')
           .eq('stripe_customer_id', customerId)
           .single()
 
@@ -161,25 +163,21 @@ router.post('/webhook', asyncHandler(async (req, res) => {
             : subscriptionObj.status === 'trialing' ? 'trialing'
             : subscriptionObj.status === 'canceled' ? 'canceled'
             : 'inactive'
+          const now = new Date().toISOString()
 
+          // Dates drive the grace and read-only periods (see access.ts). The professional keeps
+          // their account and role; access is decided from these, not by demoting the role.
           await supabaseAdmin
             .from('investor_subscriptions')
             .update({
               status,
               current_period_start: new Date(subscriptionObj.current_period_start * 1000).toISOString(),
               current_period_end: new Date(subscriptionObj.current_period_end * 1000).toISOString(),
-              updated_at: new Date().toISOString()
+              past_due_since: status === 'past_due' ? (sub.past_due_since ?? now) : null,
+              ended_at: status === 'canceled' || status === 'inactive' ? (sub.ended_at ?? now) : null,
+              updated_at: now
             })
             .eq('stripe_customer_id', customerId)
-
-          // If canceled, revert role to client
-          if (status === 'canceled') {
-            await supabaseAdmin
-              .from('profiles')
-              .update({ role: 'client', updated_at: new Date().toISOString() })
-              .eq('id', sub.user_id)
-            invalidateRoleCache(sub.user_id)
-          }
         }
         break
       }
@@ -190,24 +188,16 @@ router.post('/webhook', asyncHandler(async (req, res) => {
 
         const { data: sub } = await supabaseAdmin
           .from('investor_subscriptions')
-          .select('user_id')
+          .select('user_id, ended_at')
           .eq('stripe_customer_id', customerId)
           .single()
 
         if (sub) {
+          const now = new Date().toISOString()
           await supabaseAdmin
             .from('investor_subscriptions')
-            .update({
-              status: 'canceled',
-              updated_at: new Date().toISOString()
-            })
+            .update({ status: 'canceled', ended_at: sub.ended_at ?? now, past_due_since: null, updated_at: now })
             .eq('stripe_customer_id', customerId)
-
-          await supabaseAdmin
-            .from('profiles')
-            .update({ role: 'client', updated_at: new Date().toISOString() })
-            .eq('id', sub.user_id)
-          invalidateRoleCache(sub.user_id)
         }
         break
       }

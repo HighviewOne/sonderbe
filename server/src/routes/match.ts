@@ -5,6 +5,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 import { COUNTIES, SITUATIONS, CHOSEN_CONSENT_TEXT, MAX_ACTIVE_CLAIMS, CATEGORY_OF } from '../matching.js'
 import { listedProfessionals } from './directory.js'
+import { accessFor, canWork } from '../access.js'
 import { caseDetails, addCaseEvent, UUID_RE, DOC_FIELDS, presentDocument, addDocHistory, professionalContact } from '../cases.js'
 
 // Homeowner side of matching: the homeowner picks one professional from the directory,
@@ -16,7 +17,7 @@ const router = Router()
 router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const { data: requests, error } = await supabaseAdmin
     .from('match_requests')
-    .select('id, homeowner_id, category, county, situation, contact_name, contact_phone, best_time, status, claimed_by, claimed_at, created_at, stage, next_step, outcome, stage_updated_at, homeowner_notes_read_at')
+    .select('id, homeowner_id, category, county, situation, contact_name, contact_phone, best_time, status, claimed_by, claimed_at, created_at, stage, next_step, outcome, stage_updated_at, homeowner_notes_read_at, closed_reason')
     .eq('homeowner_id', req.userId!)
     .order('created_at', { ascending: true })
 
@@ -24,6 +25,27 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
     console.error('Failed to fetch match requests:', error)
     res.status(500).json({ error: 'Failed to fetch your cases' })
     return
+  }
+
+  // A professional whose read-only period is over has left: close the case for the homeowner
+  const claimedPros = requests.filter(r => r.status === 'claimed' && r.claimed_by).map(r => r.claimed_by as string)
+  const access = await accessFor(claimedPros)
+  if (access === null) {
+    res.status(500).json({ error: 'Failed to fetch your cases' })
+    return
+  }
+  for (const r of requests) {
+    const a = r.claimed_by ? access.get(r.claimed_by) : undefined
+    if (r.status === 'claimed' && a && (a.state === 'ended' || a.state === 'none')) {
+      const { error: closeError } = await supabaseAdmin.from('match_requests')
+        .update({ status: 'closed', closed_reason: 'professional_inactive' }).eq('id', r.id).eq('status', 'claimed')
+      if (closeError) console.error('Failed to close case for inactive professional:', closeError)
+      else {
+        r.status = 'closed'
+        r.closed_reason = 'professional_inactive'
+        await addCaseEvent(r.id, r.stage, 'Your professional is no longer on SonderBe, so this case was closed. You can choose someone new.', r.homeowner_id)
+      }
+    }
   }
 
   const active = requests.filter(r => r.status === 'claimed' && r.claimed_by)
@@ -54,6 +76,7 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
     delete publicRequest.homeowner_id
     delete publicRequest.homeowner_notes_read_at
     const notes = details.get(r.id)?.notes ?? []
+    const proAccess = r.status === 'claimed' && r.claimed_by ? access.get(r.claimed_by) : undefined
     return {
       category: r.category,
       request: publicRequest,
@@ -61,6 +84,8 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
       events: details.get(r.id)?.events ?? [],
       documents: details.get(r.id)?.documents ?? [],
       notes,
+      // 'inactive' = their subscription ended; they can still read but not update the case
+      professional_status: proAccess ? (canWork(proAccess) ? 'active' : 'inactive') : null,
       unread_notes: notes.filter(n => n.author_role === 'professional' &&
         (!r.homeowner_notes_read_at || n.created_at > r.homeowner_notes_read_at)).length
     }
@@ -132,14 +157,20 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
   const category = CATEGORY_OF[pro.professional_type]
   const [{ data: profile, error: profileError }, { data: existing, error: existingError }] = await Promise.all([
     supabaseAdmin.from('profiles').select('email').eq('id', req.userId!).single(),
-    supabaseAdmin.from('match_requests').select('id, status').eq('homeowner_id', req.userId!).eq('category', category).maybeSingle()
+    supabaseAdmin.from('match_requests').select('id, status, claimed_by').eq('homeowner_id', req.userId!).eq('category', category).maybeSingle()
   ])
   if (profileError || !profile || existingError) {
     console.error('Failed to prepare match request:', profileError || existingError)
     res.status(500).json({ error: 'Failed to choose this professional' })
     return
   }
-  if (existing?.status === 'claimed') {
+  // Replacing a professional whose account is inactive is allowed without withdrawing first
+  let replacingInactive = false
+  if (existing?.status === 'claimed' && existing.claimed_by) {
+    const a = (await accessFor([existing.claimed_by]))?.get(existing.claimed_by)
+    replacingInactive = Boolean(a && !canWork(a))
+  }
+  if (existing?.status === 'claimed' && !replacingInactive) {
     res.status(409).json({
       error: category === 'legal'
         ? 'You already have a legal professional. Withdraw first to choose someone new.'
@@ -167,20 +198,31 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
     stage: 'matched',
     next_step: `${pro.full_name || 'Your professional'} will contact you.`,
     outcome: null,
-    stage_updated_at: now
+    stage_updated_at: now,
+    closed_reason: null,
+    homeowner_notes_read_at: null,
+    professional_notes_read_at: null
   }
 
-  // A reopened request starts a fresh case: clear the old timeline and documents
+  // A new professional starts a fresh case. The document list carries over (reset to "to send")
+  // so nobody retypes it; the timeline, notes and document history were with the previous
+  // professional and are removed.
   if (existing) {
     await Promise.all([
       supabaseAdmin.from('case_events').delete().eq('match_request_id', existing.id),
-      supabaseAdmin.from('case_documents').delete().eq('match_request_id', existing.id)
+      supabaseAdmin.from('case_notes').delete().eq('match_request_id', existing.id),
+      supabaseAdmin.from('case_document_history').delete().eq('match_request_id', existing.id),
+      supabaseAdmin.from('case_documents').update({
+        sent_at: null, received_at: null, homeowner_note: null, round: 1, request_reason: null, last_received_at: null, due_date: null
+      }).eq('match_request_id', existing.id)
     ])
   }
 
   // The status filter on the update keeps a concurrent pick from being overwritten
   const query = existing
-    ? supabaseAdmin.from('match_requests').update(row).eq('id', existing.id).neq('status', 'claimed')
+    ? (replacingInactive
+        ? supabaseAdmin.from('match_requests').update(row).eq('id', existing.id).eq('claimed_by', existing.claimed_by!)
+        : supabaseAdmin.from('match_requests').update(row).eq('id', existing.id).neq('status', 'claimed'))
     : supabaseAdmin.from('match_requests').insert(row)
   const { data, error } = await query.select('id, category, county, situation, status, stage, created_at').maybeSingle()
 

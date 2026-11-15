@@ -1,26 +1,40 @@
 import type { Response, NextFunction } from 'express'
-import { professionalsWithAccess } from '../access.js'
 import type { AuthenticatedRequest } from '../types.js'
+import { accessFor } from '../access.js'
 
+// Subscribed professionals (role 'investor'). Access comes from their own subscription or
+// their broker's (see access.ts):
+// - active / grace: everything
+// - read_only: GET only, so they can wrap up with clients but not change anything
+// - ended / none: no access (the frontend sends them to the renew page)
 export async function investorOnly(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (req.userRole !== 'investor') {
-    res.status(403).json({ error: 'Investor access required' })
+    res.status(403).json({ error: 'Professional access required', code: 'not_professional' })
     return
   }
 
   try {
-    // Own subscription, or a brokerage whose broker pays for the team
-    const allowed = await professionalsWithAccess([req.userId!])
-    if (allowed === null) {
+    const access = (await accessFor([req.userId!]))?.get(req.userId!)
+    if (!access) {
       res.status(500).json({ error: 'Failed to verify subscription' })
       return
     }
-    if (!allowed.has(req.userId!)) {
-      res.status(403).json({ error: 'Active subscription required' })
+    if (access.state === 'active' || access.state === 'grace') {
+      next()
       return
     }
-
-    next()
+    if (access.state === 'read_only') {
+      if (req.method === 'GET') {
+        next()
+        return
+      }
+      res.status(402).json({
+        error: 'Your subscription has ended, so your account is read-only. Renew to make changes.',
+        code: 'read_only'
+      })
+      return
+    }
+    res.status(403).json({ error: 'Active subscription required', code: 'subscription_required' })
   } catch (err) {
     console.error('Investor check error:', err)
     res.status(500).json({ error: 'Failed to verify subscription' })

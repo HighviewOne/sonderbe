@@ -17,6 +17,7 @@ export type MatchRequest = {
   next_step: string | null
   outcome: string | null
   stage_updated_at: string | null
+  closed_reason: 'professional_inactive' | null
 }
 
 export type DirectoryEntry = {
@@ -94,6 +95,7 @@ export type MatchCase = {
   documents: CaseDocument[]
   notes: CaseNote[]
   unread_notes: number
+  professional_status: 'active' | 'inactive' | null
 }
 
 type MatchResponse = {

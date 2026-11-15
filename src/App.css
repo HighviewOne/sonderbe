@@ -2907,9 +2907,16 @@
   margin-bottom: 1.5rem;
 }
 
-.case-section .dashboard-card {
+.case-section {
+  /* index.css gives every <section> homepage padding; cases sit inside the portal */
+  padding: 0;
+}
+
+.case-section .dashboard-card,
+.client-docs {
   margin-bottom: 1rem;
 }
+
 
 .info-nudge {
   border-left: 4px solid var(--color-accent);
@@ -3665,4 +3672,38 @@
   .note {
     max-width: 100%;
   }
+}
+
+/* Subscription states, demo box, ad admin */
+.access-banner {
+  margin-bottom: 1rem;
+}
+
+.demo-box {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 2px dashed var(--tone-warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--tone-warning-bg);
+  color: var(--color-text);
+}
+
+.demo-box p {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.ad-admin-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.ad-admin-list h3 {
+  margin: 0.15rem 0 0;
+}
+
+.ad-form {
+  margin: 1rem 0;
 }
