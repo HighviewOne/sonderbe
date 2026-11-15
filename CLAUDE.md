@@ -184,7 +184,12 @@ row and pays, agents join by invite link (`/#/join/<token>`) and are covered via
 ## Deployment
 
 - **Frontend**: Vercel — auto-deploys from `master` branch, repo `HighviewOne/sonderbe`
-  - Env vars: `VITE_API_URL` = `https://sonderbe.onrender.com/api`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+  - Env vars: `VITE_API_URL` = `https://sonderbe.onrender.com/api`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (holds the
+    live **publishable** key `sb_publishable_…` since 2026-11-15; never a service-role/`sb_secret_` value)
+  - Branch `directory-and-tracker` has Preview-only overrides of all four (test project, demo API, `VITE_DEMO_SITE=true`).
+    The Add form defaults to Production: untick it, then pick the branch under Preview Branches
+  - **Keys rotated 2026-11-15:** the service-role key was briefly shipped in the public bundle; legacy JWT keys are now
+    disabled on the live project, Render + `server/.env` use an `sb_secret_` key in `SUPABASE_SERVICE_ROLE_KEY`
   - Note: `VITE_` env vars are baked in at build time — must redeploy after changing them
   - Vercel project was recreated (old one was connected to wrong repo); domain `sonderbe.vercel.app` reassigned
 - **Backend**: Render Web Service — `https://sonderbe.onrender.com`
