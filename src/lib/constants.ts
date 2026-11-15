@@ -217,3 +217,74 @@ export const situationOptions = [
 
 export const situationLabel = (value: string) =>
   situationOptions.find(o => o.value === value)?.label ?? value
+
+// ---------------------------------------------------------------------------
+// Directory + case tracker. Must match server/src/matching.ts.
+// ---------------------------------------------------------------------------
+
+export type ProfessionalType = 'agent' | 'broker' | 'attorney' | 'legal_professional' | 'negotiator'
+
+export const professionalTypes: { value: ProfessionalType; label: string; description: string }[] = [
+  {
+    value: 'agent',
+    label: 'Real Estate Agent',
+    description: 'Lists and sells your home, including short sales where the lender accepts less than you owe. Usually paid from the sale at closing.'
+  },
+  {
+    value: 'broker',
+    label: 'Real Estate Broker',
+    description: 'A licensed agent who can run their own office and supervise other agents. Handles the same short sales and listings.'
+  },
+  {
+    value: 'attorney',
+    label: 'Attorney',
+    description: 'Gives legal advice and can represent you: foreclosure defense, bankruptcy, lender disputes. Contact them directly.'
+  },
+  {
+    value: 'legal_professional',
+    label: 'Legal Professional',
+    description: 'Legal document assistants and paralegals help prepare paperwork. They cannot give legal advice or represent you.'
+  },
+  {
+    value: 'negotiator',
+    label: 'Negotiator',
+    description: 'Negotiates with your lender, often alongside a short-sale agent. Not a licensed profession in California.'
+  }
+]
+
+export const professionalTypeLabel = (value: string | null | undefined) =>
+  professionalTypes.find(t => t.value === value)?.label ?? 'Professional'
+
+export type Stage = 'matched' | 'first_contact' | 'documents_requested' | 'documents_received' |
+  'submitted_to_lender' | 'lender_review' | 'outcome'
+
+export const stages: { value: Stage; label: string }[] = [
+  { value: 'matched', label: 'Matched' },
+  { value: 'first_contact', label: 'First contact' },
+  { value: 'documents_requested', label: 'Documents requested' },
+  { value: 'documents_received', label: 'Documents received' },
+  { value: 'submitted_to_lender', label: 'Submitted to lender' },
+  { value: 'lender_review', label: 'Lender reviewing' },
+  { value: 'outcome', label: 'Outcome' }
+]
+
+export const stageLabel = (value: string) => stages.find(s => s.value === value)?.label ?? value
+
+export const outcomes = [
+  { value: 'short_sale_closed', label: 'Short sale closed' },
+  { value: 'loan_modified', label: 'Loan modified' },
+  { value: 'reinstated', label: 'Loan reinstated (caught up)' },
+  { value: 'sold', label: 'Home sold' },
+  { value: 'foreclosed', label: 'Foreclosure completed' },
+  { value: 'other', label: 'Other' }
+]
+
+export const outcomeLabel = (value: string | null) => outcomes.find(o => o.value === value)?.label ?? ''
+
+export const adCategoryLabels: Record<string, string> = {
+  movers: 'Movers',
+  storage: 'Storage',
+  cleaning: 'Cleaning',
+  rental_housing: 'Rental housing',
+  other: 'Other services'
+}

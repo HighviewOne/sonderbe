@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "dev:test": "tsx watch --env-file=.env.test.local src/index.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.78.0",

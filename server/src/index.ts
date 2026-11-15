@@ -16,6 +16,8 @@ import investorRoutes from './routes/investor.js'
 import stripeRoutes from './routes/stripe.js'
 import matchRoutes from './routes/match.js'
 import leadsRoutes from './routes/leads.js'
+import directoryRoutes from './routes/directory.js'
+import adsRoutes from './routes/ads.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -56,6 +58,8 @@ app.use('/api/investor', investorRoutes)
 app.use('/api/stripe', stripeRoutes)
 app.use('/api/match', matchRoutes)
 app.use('/api/leads', leadsRoutes)
+app.use('/api/directory', directoryRoutes)
+app.use('/api/ads', adsRoutes)
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }))
 app.use(errorHandler)

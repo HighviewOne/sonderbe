@@ -21,8 +21,10 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads
   - `/api/investor` — GET /properties (search/filter/paginate), /properties/:id, /stats, /subscription
   - `/api/stripe` — POST /create-checkout, /webhook (raw body), /portal
-  - `/api/match` — homeowner (role client): GET own request + consent text + matched professional, POST create/reopen (consent required), DELETE withdraw
-  - `/api/leads` — subscribed professional (investorOnly): GET open leads in service counties (category counts only) + own claims (contact + item-level checklist), PUT /service-area, POST /:id/claim (atomic, max 10 active), /:id/release, /:id/close
+  - `/api/match` — homeowner (role client): GET own request + consent text + chosen professional + timeline + documents, POST choose a professional (`professional_id`, consent required; creates the request already `claimed`), PATCH /documents/:docId (mark sent + note), DELETE withdraw
+  - `/api/leads` — subscribed professional (investorOnly): GET open leads in service counties (category counts only) + own clients (contact, item-level checklist, stage, timeline, documents), PUT /service-area, GET/PUT /profile (directory listing; license change clears `license_verified`; listing needs the no-upfront-fee pledge), POST /:id/stage, POST /:id/documents (`{label}` or `{standard:true}`), PATCH/DELETE /:id/documents/:docId, POST /:id/claim (legacy open pool), /:id/release, /:id/close
+  - `/api/directory` — any logged-in user: GET ?county=&type= listed + subscribed professionals, A–Z (never paid ranking). `DIRECT_CONTACT_ONLY_TYPES` (attorneys, pending legal review) show contact details and can't be chosen
+  - `/api/ads` — GET ?county= active service ads (shuffled, counts views), POST /:id/click
 - Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, express-rate-limit
 - Dev: tsx (watch mode), typescript
 - Stripe webhook: `app.use('/api/stripe/webhook', express.raw(...))` in `index.ts` BEFORE `express.json()` — a router-level `express.raw()` alone does NOT work (json parses first, raw skips, signature check fails). Verified with a signed test event 2026-09-24
@@ -73,6 +75,20 @@ contact details + item-level checklist → homeowner sees the professional's con
   `src/lib/constants.ts` and `server/src/matching.ts` — keep in sync.
 - Before launch: attorney review of consent text and the model (Civ. Code §2945 foreclosure consultants, §2944.7 advance
   fees); verify professionals' DRE licenses (not built); no admin view of match requests yet.
+
+## Directory + case tracker (built 2026-11-15, branch `directory-and-tracker`)
+
+Homeowner picks a professional from a county directory (`/portal/match`) → sees stage progress, next step, a document
+checklist (homeowner ticks "sent", professional ticks "received"; files never touch SonderBe) and a timeline. Professionals:
+`/investor` (My Clients, case manager per client) and `/investor/listing`. Sponsored service ads at `/portal/moving`.
+Migration `003_directory_and_tracker.sql` (profile listing fields, `match_requests.stage/next_step/outcome`, `case_events`,
+`case_documents`, `service_ads`, `increment_ad_counter`). Legal reasoning: the attorney brief Claude Doc linked in memory.
+- **Test environment:** separate Supabase project `yiwfzzfkkzkslqwjjcsy` (sonderbe-test). Keys in gitignored
+  `server/.env.test.local` + `.env.test.local`. `npm run dev:test` in root and `server/` runs the app against it;
+  `cd server && npm run seed:demo` wipes and recreates demo accounts (`*@example.com`, password `SonderDemo-2026`) and ads.
+  The seed script refuses the live project ref.
+- Not built yet: admin screens for ads and license verification (set `license_verified` / ads in the DB for now);
+  003 is not applied to the live project.
 
 ## Investor Portal (data features, now hidden from nav)
 

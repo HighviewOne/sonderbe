@@ -4,7 +4,8 @@ import {
   PropertySearch,
   PropertyDetail,
   SubscriptionStatus,
-  Leads
+  Leads,
+  MyListing
 } from '../components/investor'
 
 // Professional portal. The property-data pages (dashboard/search/detail) are kept but
@@ -15,7 +16,10 @@ export function InvestorPage() {
       <div className="investor-container">
         <nav className="investor-nav">
           <NavLink to="/investor" end className={({ isActive }) => isActive ? 'active' : ''}>
-            Leads
+            My Clients
+          </NavLink>
+          <NavLink to="/investor/listing" className={({ isActive }) => isActive ? 'active' : ''}>
+            My Listing
           </NavLink>
           <NavLink to="/investor/subscription" className={({ isActive }) => isActive ? 'active' : ''}>
             Subscription
@@ -25,6 +29,7 @@ export function InvestorPage() {
         <div className="investor-content">
           <Routes>
             <Route index element={<Leads />} />
+            <Route path="listing" element={<MyListing />} />
             <Route path="data" element={<InvestorDashboard />} />
             <Route path="search" element={<PropertySearch />} />
             <Route path="properties/:id" element={<PropertyDetail />} />

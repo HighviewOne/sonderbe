@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiGet, apiPost, apiPut } from '../../lib/api'
-import { checklistData, COUNTIES, situationLabel } from '../../lib/constants'
+import { checklistData, COUNTIES, situationLabel, stageLabel } from '../../lib/constants'
+import type { Stage } from '../../lib/constants'
+import type { CaseDocument, CaseEvent } from '../../hooks/useMatch'
+import { CaseManager } from './CaseManager'
 
 type OpenLead = {
   id: string
@@ -23,6 +26,11 @@ type MyLead = {
   claimed_at: string | null
   created_at: string
   checked_items: [number, number][]
+  stage: Stage
+  next_step: string | null
+  outcome: string | null
+  events: CaseEvent[]
+  documents: CaseDocument[]
 }
 
 type LeadsResponse = {
@@ -123,10 +131,11 @@ export function Leads() {
   return (
     <div className="leads">
       <div className="page-header">
-        <h1>Homeowner Leads</h1>
+        <h1>My Clients</h1>
         <p>
-          Homeowners in your counties who asked to be contacted. Accept a lead to see their contact details and
-          which documents they have ready. Each homeowner is matched with one professional at a time.
+          Homeowners who chose you from the SonderBe directory. Keep each case's stage and next step current and
+          request documents here; homeowners see every update in their portal. Homeowners never pay SonderBe,
+          and you have pledged to charge them nothing upfront.
         </p>
       </div>
 
@@ -163,25 +172,26 @@ export function Leads() {
 
       <div className="dashboard-card">
         <div className="card-header">
-          <h2>My Active Leads ({active.length})</h2>
+          <h2>Active Clients ({active.length})</h2>
         </div>
         {active.length === 0 ? (
-          <p className="empty-state">No active leads. Accept one below.</p>
+          <p className="empty-state">No clients yet. Make sure your listing is published so homeowners can find you.</p>
         ) : (
           <ul className="lead-list">
             {active.map(lead => (
               <li key={lead.id} className="lead-item">
                 <div className="lead-summary">
                   <strong>{lead.contact_name}</strong> · {lead.county} · {situationLabel(lead.situation)}
-                  <span className="lead-readiness">{readinessPercent(lead.checked_items.length)}% ready</span>
+                  <span className="lead-readiness">{stageLabel(lead.stage)} · checklist {readinessPercent(lead.checked_items.length)}%</span>
                 </div>
                 <div className="lead-contact">
                   {lead.contact_email && <a href={`mailto:${lead.contact_email}`}>{lead.contact_email}</a>}
                   {lead.contact_phone && <> · <a href={`tel:${lead.contact_phone}`}>{lead.contact_phone}</a></>}
                   {lead.best_time && <> · Best time: {lead.best_time}</>}
                 </div>
+                <CaseManager lead={lead} onChanged={fetchLeads} />
                 <details>
-                  <summary>Checklist detail</summary>
+                  <summary>Readiness checklist detail</summary>
                   {checklistData.map((cat, ci) => {
                     const ready = cat.items.filter((_, ii) => lead.checked_items.some(([c, i]) => c === ci && i === ii))
                     const missing = cat.items.filter((_, ii) => !lead.checked_items.some(([c, i]) => c === ci && i === ii))
@@ -195,11 +205,8 @@ export function Leads() {
                   })}
                 </details>
                 <div className="lead-actions">
-                  <button className="btn btn-primary btn-small" disabled={busyId === lead.id} onClick={() => act(lead.id, 'close')}>
-                    Mark closed
-                  </button>{' '}
-                  <button className="btn btn-secondary btn-small" disabled={busyId === lead.id} onClick={() => act(lead.id, 'release')}>
-                    Release to others
+                  <button className="btn btn-secondary btn-small" disabled={busyId === lead.id} onClick={() => act(lead.id, 'close')}>
+                    Close case
                   </button>
                 </div>
               </li>
@@ -208,6 +215,7 @@ export function Leads() {
         )}
       </div>
 
+      {data.open.length > 0 && (
       <div className="dashboard-card">
         <div className="card-header">
           <h2>Available Leads ({data.open.length})</h2>
@@ -243,10 +251,12 @@ export function Leads() {
         )}
       </div>
 
+      )}
+
       {past.length > 0 && (
         <div className="dashboard-card">
           <div className="card-header">
-            <h2>Past Leads</h2>
+            <h2>Past Clients</h2>
           </div>
           <ul className="lead-list">
             {past.map(lead => (

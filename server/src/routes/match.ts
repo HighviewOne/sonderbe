@@ -3,16 +3,20 @@ import { supabaseAdmin } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
-import { COUNTIES, SITUATIONS, CONSENT_TEXT } from '../matching.js'
+import { COUNTIES, SITUATIONS, CHOSEN_CONSENT_TEXT, MAX_ACTIVE_CLAIMS } from '../matching.js'
+import { listedProfessionals } from './directory.js'
+import { caseDetails, addCaseEvent, UUID_RE } from '../cases.js'
 
+// Homeowner side of matching: the homeowner picks one professional from the directory,
+// then follows the case (stage, next step, timeline, document checklist).
 const router = Router()
 
-// GET /api/match — own match request (or null), the consent wording, and the
-// matched professional's contact details once a professional has claimed it
+// GET /api/match — own match request (or null), the consent wording, and once matched:
+// the professional's listing + contact details, the case timeline and document checklist
 router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const { data: request, error } = await supabaseAdmin
     .from('match_requests')
-    .select('id, county, situation, contact_name, contact_phone, best_time, status, claimed_by, claimed_at, created_at')
+    .select('id, homeowner_id, county, situation, contact_name, contact_phone, best_time, status, claimed_by, claimed_at, created_at, stage, next_step, outcome, stage_updated_at')
     .eq('homeowner_id', req.userId!)
     .maybeSingle()
 
@@ -23,40 +27,56 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
   }
 
   let professional = null
+  let events: unknown[] = []
+  let documents: unknown[] = []
   if (request?.status === 'claimed' && request.claimed_by) {
-    const { data: pro, error: proError } = await supabaseAdmin
-      .from('profiles')
-      .select('full_name, email, phone')
-      .eq('id', request.claimed_by)
-      .maybeSingle()
+    const [{ data: contact, error: proError }, listing, details] = await Promise.all([
+      supabaseAdmin.from('profiles')
+        .select('full_name, email, phone, business_name, professional_type, website, license_number, license_verified')
+        .eq('id', request.claimed_by).maybeSingle(),
+      listedProfessionals({ id: request.claimed_by }),
+      caseDetails([{ id: request.id, homeowner_id: request.homeowner_id }])
+    ])
     if (proError) console.error('Failed to fetch matched professional:', proError)
-    professional = pro
+    // Contact details come from the profile even if the listing was since unpublished
+    professional = contact ? { ...(listing?.[0] ?? {}), ...contact } : null
+    if (details) {
+      events = details.get(request.id)!.events
+      documents = details.get(request.id)!.documents
+    }
   }
 
   let publicRequest = null
   if (request) {
-    // claimed_by is an internal profile id; the homeowner gets `professional` instead
+    // internal profile ids stay server-side; the homeowner gets `professional` instead
     publicRequest = { ...request } as Partial<typeof request>
     delete publicRequest.claimed_by
+    delete publicRequest.homeowner_id
   }
   res.json({
     request: publicRequest,
     professional,
-    consent_text: CONSENT_TEXT
+    events,
+    documents,
+    consent_text: CHOSEN_CONSENT_TEXT
   })
 }))
 
-// POST /api/match — create or reopen own match request
+// POST /api/match — choose a professional from the directory (creates or reopens own request)
 router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   if (req.userRole !== 'client') {
-    res.status(403).json({ error: 'Only homeowner accounts can request a match' })
+    res.status(403).json({ error: 'Only homeowner accounts can choose a professional' })
     return
   }
 
-  const { county, situation, contact_name, contact_phone, best_time, consent } = req.body ?? {}
+  const { professional_id, county, situation, contact_name, contact_phone, best_time, consent } = req.body ?? {}
 
   if (consent !== true) {
-    res.status(400).json({ error: 'You must agree to be contacted to request a match' })
+    res.status(400).json({ error: 'You must agree to share your details with this professional' })
+    return
+  }
+  if (typeof professional_id !== 'string' || !UUID_RE.test(professional_id)) {
+    res.status(400).json({ error: 'Please choose a professional' })
     return
   }
   if (typeof county !== 'string' || !COUNTIES.includes(county)) {
@@ -81,32 +101,43 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
     return
   }
 
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from('profiles')
-    .select('email')
-    .eq('id', req.userId!)
-    .single()
-  if (profileError || !profile) {
-    console.error('Failed to fetch profile for match request:', profileError)
-    res.status(500).json({ error: 'Failed to create match request' })
+  // The professional must be listed, subscribed, serve this county, take requests
+  // through SonderBe (not direct-contact-only) and have room for another client
+  const listing = await listedProfessionals({ id: professional_id, county })
+  if (listing === null) {
+    res.status(500).json({ error: 'Failed to choose this professional' })
+    return
+  }
+  const pro = listing[0]
+  if (!pro) {
+    res.status(400).json({ error: 'This professional is not available in your county' })
+    return
+  }
+  if (pro.direct_contact_only) {
+    res.status(400).json({ error: 'Please contact this professional directly using the details on their listing' })
+    return
+  }
+  if (!pro.accepting) {
+    res.status(409).json({ error: `This professional has ${MAX_ACTIVE_CLAIMS} active clients and isn't taking new ones right now` })
     return
   }
 
-  const { data: existing, error: existingError } = await supabaseAdmin
-    .from('match_requests')
-    .select('status')
-    .eq('homeowner_id', req.userId!)
-    .maybeSingle()
-  if (existingError) {
-    console.error('Failed to check existing match request:', existingError)
-    res.status(500).json({ error: 'Failed to create match request' })
+  const [{ data: profile, error: profileError }, { data: existing, error: existingError }] = await Promise.all([
+    supabaseAdmin.from('profiles').select('email').eq('id', req.userId!).single(),
+    supabaseAdmin.from('match_requests').select('status').eq('homeowner_id', req.userId!).maybeSingle()
+  ])
+  if (profileError || !profile || existingError) {
+    console.error('Failed to prepare match request:', profileError || existingError)
+    res.status(500).json({ error: 'Failed to choose this professional' })
     return
   }
   if (existing?.status === 'claimed') {
-    res.status(409).json({ error: 'You are already matched with a professional. Withdraw first to request someone new.' })
+    res.status(409).json({ error: 'You already have a professional. Withdraw first to choose someone new.' })
     return
   }
 
+  const now = new Date().toISOString()
+  const proName = [pro.full_name, pro.business_name].filter(Boolean).join(', ')
   const row = {
     homeowner_id: req.userId!,
     county,
@@ -115,30 +146,100 @@ router.post('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res
     contact_email: profile.email,
     contact_phone: contact_phone ? contact_phone.trim() : null,
     best_time: best_time ? best_time.trim() : null,
-    consent_text: CONSENT_TEXT,
-    consented_at: new Date().toISOString(),
-    status: 'open',
-    claimed_by: null,
-    claimed_at: null
+    consent_text: `${CHOSEN_CONSENT_TEXT} Professional chosen: ${proName}.`,
+    consented_at: now,
+    status: 'claimed',
+    claimed_by: pro.id,
+    claimed_at: now,
+    stage: 'matched',
+    next_step: `${pro.full_name || 'Your professional'} will contact you.`,
+    outcome: null,
+    stage_updated_at: now
   }
 
-  // The status filter on the update keeps a claim that lands between the check
-  // above and this write from being silently overwritten
+  // A reopened request starts a fresh case: clear the old timeline and documents
+  if (existing) {
+    const { data: old } = await supabaseAdmin.from('match_requests').select('id').eq('homeowner_id', req.userId!).single()
+    if (old) {
+      await Promise.all([
+        supabaseAdmin.from('case_events').delete().eq('match_request_id', old.id),
+        supabaseAdmin.from('case_documents').delete().eq('match_request_id', old.id)
+      ])
+    }
+  }
+
+  // The status filter on the update keeps a concurrent pick from being overwritten
   const query = existing
     ? supabaseAdmin.from('match_requests').update(row).eq('homeowner_id', req.userId!).neq('status', 'claimed')
     : supabaseAdmin.from('match_requests').insert(row)
-  const { data, error } = await query.select('id, county, situation, status, created_at').maybeSingle()
+  const { data, error } = await query.select('id, county, situation, status, stage, created_at').maybeSingle()
 
   if (error) {
     console.error('Failed to save match request:', error)
-    res.status(500).json({ error: 'Failed to create match request' })
+    res.status(500).json({ error: 'Failed to choose this professional' })
     return
   }
   if (!data) {
-    res.status(409).json({ error: 'You were just matched with a professional. Refresh to see their details.' })
+    res.status(409).json({ error: 'You already have a professional. Refresh to see their details.' })
     return
   }
+  await addCaseEvent(data.id, 'matched', `You chose ${pro.full_name || pro.business_name}.`, req.userId!)
   res.status(existing ? 200 : 201).json(data)
+}))
+
+// PATCH /api/match/documents/:docId — homeowner marks a requested document sent (or not)
+router.patch('/documents/:docId', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const docId = String(req.params.docId)
+  if (!UUID_RE.test(docId)) {
+    res.status(400).json({ error: 'Invalid document id' })
+    return
+  }
+  const { sent, note } = req.body ?? {}
+  if (typeof sent !== 'boolean') {
+    res.status(400).json({ error: 'sent must be true or false' })
+    return
+  }
+  if (note !== undefined && note !== null && (typeof note !== 'string' || note.length > 300)) {
+    res.status(400).json({ error: 'Note must be 300 characters or fewer' })
+    return
+  }
+
+  // Only documents on the homeowner's own active case
+  const { data: request, error: reqError } = await supabaseAdmin
+    .from('match_requests')
+    .select('id')
+    .eq('homeowner_id', req.userId!)
+    .eq('status', 'claimed')
+    .maybeSingle()
+  if (reqError) {
+    console.error('Failed to fetch match request for document update:', reqError)
+    res.status(500).json({ error: 'Failed to update document' })
+    return
+  }
+  if (!request) {
+    res.status(404).json({ error: 'No active case' })
+    return
+  }
+
+  const update: Record<string, unknown> = { sent_at: sent ? new Date().toISOString() : null }
+  if (note !== undefined) update.homeowner_note = note ? note.trim() : null
+  const { data, error } = await supabaseAdmin
+    .from('case_documents')
+    .update(update)
+    .eq('id', docId)
+    .eq('match_request_id', request.id)
+    .select('id, label, sort_order, homeowner_note, sent_at, received_at')
+    .maybeSingle()
+  if (error) {
+    console.error('Failed to update document:', error)
+    res.status(500).json({ error: 'Failed to update document' })
+    return
+  }
+  if (!data) {
+    res.status(404).json({ error: 'Document not found' })
+    return
+  }
+  res.json(data)
 }))
 
 // DELETE /api/match — withdraw own request (stops contact; hides details from the professional)

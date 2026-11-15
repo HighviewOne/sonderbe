@@ -1,5 +1,5 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Dashboard, MyChecklist, DocumentUpload, GetMatched } from '../components/portal'
+import { Dashboard, MyChecklist, DocumentUpload, GetMatched, MovingForward } from '../components/portal'
 import { DOCUMENT_UPLOADS_ENABLED } from '../lib/constants'
 
 export function PortalPage() {
@@ -14,7 +14,10 @@ export function PortalPage() {
             My Checklist
           </NavLink>
           <NavLink to="/portal/match" className={({ isActive }) => isActive ? 'active' : ''}>
-            Get Matched
+            My Professional
+          </NavLink>
+          <NavLink to="/portal/moving" className={({ isActive }) => isActive ? 'active' : ''}>
+            Moving Forward
           </NavLink>
           {DOCUMENT_UPLOADS_ENABLED && (
             <NavLink to="/portal/documents" className={({ isActive }) => isActive ? 'active' : ''}>
@@ -28,6 +31,7 @@ export function PortalPage() {
             <Route index element={<Dashboard />} />
             <Route path="checklist" element={<MyChecklist />} />
             <Route path="match" element={<GetMatched />} />
+            <Route path="moving" element={<MovingForward />} />
             {DOCUMENT_UPLOADS_ENABLED && <Route path="documents" element={<DocumentUpload />} />}
           </Routes>
         </div>

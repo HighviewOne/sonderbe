@@ -4,7 +4,7 @@ import { useChecklist } from '../../hooks/useChecklist'
 import { useDocuments } from '../../hooks/useDocuments'
 import { useSubmissions } from '../../hooks/useSubmissions'
 import { useMatch } from '../../hooks/useMatch'
-import { DOCUMENT_UPLOADS_ENABLED } from '../../lib/constants'
+import { DOCUMENT_UPLOADS_ENABLED, stageLabel } from '../../lib/constants'
 
 export function Dashboard() {
   const { profile } = useAuth()
@@ -105,29 +105,32 @@ export function Dashboard() {
 }
 
 function MatchCard() {
-  const { request, loading } = useMatch()
-  const active = request && (request.status === 'open' || request.status === 'claimed')
+  const { request, professional, documents, loading } = useMatch()
+  const active = request?.status === 'claimed'
+  const toSend = documents.filter(d => !d.sent_at).length
 
   return (
     <div className="dashboard-card match-overview">
       <div className="card-header">
-        <h2>Get Matched</h2>
+        <h2>My Professional</h2>
       </div>
       {loading ? (
         <p>Loading...</p>
       ) : !active ? (
         <>
-          <p className="empty-state">Connect with one real estate professional in your county. Free for homeowners.</p>
-          <Link to="/portal/match" className="btn btn-secondary btn-full">Request a Match</Link>
+          <p className="empty-state">Choose an agent, broker or other professional in your county. Free for homeowners.</p>
+          <Link to="/portal/match" className="btn btn-secondary btn-full">Find a Professional</Link>
         </>
       ) : (
         <>
           <p>
-            {request.status === 'open'
-              ? `Request sent for ${request.county} County — waiting for a professional to accept.`
-              : 'You have been matched with a professional.'}
+            <strong>{professional?.full_name || 'Your professional'}</strong>
+            {professional?.business_name && <> · {professional.business_name}</>}
           </p>
-          <Link to="/portal/match" className="btn btn-secondary btn-full">View Details</Link>
+          <p>Stage: <strong>{stageLabel(request.stage)}</strong></p>
+          {request.next_step && <p>Next step: {request.next_step}</p>}
+          {toSend > 0 && <p>{toSend} document{toSend === 1 ? '' : 's'} still to send</p>}
+          <Link to="/portal/match" className="btn btn-secondary btn-full">View My Case</Link>
         </>
       )}
     </div>

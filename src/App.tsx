@@ -1,4 +1,5 @@
-import { Routes, Route } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import { Header, Footer, ProtectedRoute } from './components/layout'
 import {
   HomePage,
@@ -13,10 +14,20 @@ import {
 } from './pages'
 import './App.css'
 
+// HashRouter keeps the old scroll position between pages; start each page at the top
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+  return null
+}
+
 function App() {
   return (
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
+      <ScrollToTop />
       <Header />
       <Routes>
         <Route path="/" element={<HomePage />} />
