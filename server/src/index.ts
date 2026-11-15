@@ -38,7 +38,8 @@ app.use(cors({
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 200,
+  // Per client IP. Overridable for the local test environment (API test suites make many calls)
+  limit: Number(process.env.RATE_LIMIT_MAX) || 200,
   standardHeaders: true,
   legacyHeaders: false,
   // Stripe webhook deliveries are signature-verified and must never be throttled

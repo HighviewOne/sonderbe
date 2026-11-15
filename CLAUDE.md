@@ -85,6 +85,10 @@ checklist (homeowner ticks "sent", professional ticks "received"; files never to
 `/investor` (My Clients, case manager per client) and `/investor/listing`. Sponsored service ads at `/portal/moving`.
 Migration `003_directory_and_tracker.sql` (profile listing fields, `match_requests.stage/next_step/outcome`, `case_events`,
 `case_documents`, `service_ads`, `increment_ad_counter`). Legal reasoning: the attorney brief Claude Doc linked in memory.
+- **API tests:** `server/tests/api/test_*.py` (Python stdlib only, 125 checks). `cd server && npm run test:api` with the
+  backend running via `npm run dev:test`; it reseeds before each suite and at the end, and refuses the live project.
+  Not in CI: it needs the test project's keys and a running backend (CI would need repo secrets; not set up).
+  `RATE_LIMIT_MAX` in `.env.test.local` lifts the 200 req/15 min limiter for the suites.
 - **Test environment:** separate Supabase project `yiwfzzfkkzkslqwjjcsy` (sonderbe-test). Keys in gitignored
   `server/.env.test.local` + `.env.test.local`. `npm run dev:test` in root and `server/` runs the app against it;
   `cd server && npm run seed:demo` wipes and recreates demo accounts (`*@example.com`, password `SonderDemo-2026`) and ads.
