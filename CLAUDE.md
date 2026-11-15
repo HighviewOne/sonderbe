@@ -198,6 +198,11 @@ row and pays, agents join by invite link (`/#/join/<token>`) and are covered via
   - Env vars: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FRONTEND_URL=https://sonderbe.vercel.app`
   - CORS configured via `FRONTEND_URL` env var
   - Render uses port from `PORT` env var (auto-assigned, currently 10000)
+- **Demo site (2026-11-15)** for outside testers: https://sonderbe-git-directory-and-tracker-michael-altamiranos-projects.vercel.app
+  (Vercel preview of `directory-and-tracker`, Deployment Protection off) → Render service `sonderbe-demo`
+  (`https://sonderbe-demo.onrender.com`, branch `directory-and-tracker`, env: test project URL + its secret key, `DEMO_MODE=true`,
+  `FRONTEND_URL` = the preview address; no Stripe keys). Both use the TEST Supabase project, so `npm run seed:demo` (and every
+  `npm run test:api`) resets what testers changed. Pushing the branch redeploys both
 - **Stripe webhook**: `https://sonderbe.onrender.com/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
   - Signing secret stored as `STRIPE_WEBHOOK_SECRET` in Render env vars
 
