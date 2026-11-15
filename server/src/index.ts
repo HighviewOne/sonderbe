@@ -32,7 +32,8 @@ app.set('trust proxy', 1)
 app.use(helmet())
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  // FRONTEND_URL may list several origins, comma-separated (the demo site's preview address + localhost)
+  origin: (process.env.FRONTEND_URL || 'http://localhost:5173').split(',').map(o => o.trim()).filter(Boolean),
   credentials: true
 }))
 

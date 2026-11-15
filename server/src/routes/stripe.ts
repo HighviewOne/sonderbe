@@ -72,7 +72,7 @@ router.post('/create-checkout', requireAuth, asyncHandler(async (req: Authentica
     })
   }
 
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()
 
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
@@ -224,7 +224,7 @@ router.post('/portal', requireAuth, asyncHandler(async (req: AuthenticatedReques
     return
   }
 
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()
 
   const session = await stripe.billingPortal.sessions.create({
     customer: sub.stripe_customer_id,

@@ -3707,3 +3707,22 @@
 .ad-form {
   margin: 1rem 0;
 }
+
+/* Demo site (VITE_DEMO_SITE=true): fixed strip under the fixed header */
+.demo-site-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: #b45309;
+  color: #fff;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 1rem;
+}
+
+body:has(.demo-site-banner) {
+  padding-bottom: 2rem;
+}

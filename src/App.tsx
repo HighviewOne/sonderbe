@@ -29,6 +29,11 @@ function App() {
   return (
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
+      {import.meta.env.VITE_DEMO_SITE === 'true' && (
+        <div className="demo-site-banner" role="note">
+          Demo site with made-up data. Don't enter real names, addresses or financial information.
+        </div>
+      )}
       <ScrollToTop />
       <Header />
       <Routes>
