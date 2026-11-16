@@ -12,7 +12,8 @@ import {
   InvestorPage,
   InvestorSubscribePage,
   JoinBrokeragePage,
-  AdReportPage
+  AdReportPage,
+  NotFoundPage
 } from './pages'
 import './App.css'
 
@@ -83,6 +84,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <Footer />
     </>

@@ -1,4 +1,5 @@
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { NotFoundPage } from './NotFoundPage'
 import { useAuth } from '../hooks/useAuth'
 import { Dashboard, MyChecklist, DocumentUpload, GetMatched, MovingForward, MyInformation, HardshipLetter } from '../components/portal'
 import { DOCUMENT_UPLOADS_ENABLED } from '../lib/constants'
@@ -42,6 +43,7 @@ export function PortalPage() {
             <Route path="hardship-letter" element={<HardshipLetter />} />
             <Route path="moving" element={<MovingForward />} />
             {DOCUMENT_UPLOADS_ENABLED && <Route path="documents" element={<DocumentUpload />} />}
+            <Route path="*" element={<NotFoundPage home="/portal" />} />
           </Routes>
         </div>
       </div>

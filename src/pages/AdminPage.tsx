@@ -1,4 +1,5 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
+import { NotFoundPage } from './NotFoundPage'
 import {
   AdminDashboard,
   ClientList,
@@ -53,6 +54,7 @@ export function AdminPage() {
             <Route path="properties/csv" element={<CsvUpload />} />
             <Route path="investors" element={<InvestorList />} />
             <Route path="ads" element={<AdsManager />} />
+            <Route path="*" element={<NotFoundPage home="/admin" />} />
           </Routes>
         </div>
       </div>

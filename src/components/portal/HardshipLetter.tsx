@@ -82,17 +82,25 @@ export function HardshipLetter() {
 }
 
 function LetterEditor({ data }: { data: MyInfo }) {
-  const [goal, setGoal] = useState<Goal>('short_sale')
-  const [text, setText] = useState(() => draftLetter(data, 'short_sale'))
+  // No default goal: the letter shouldn't assume the homeowner can or can't keep the home
+  const [goal, setGoal] = useState<Goal | ''>('')
+  const [text, setText] = useState('')
   const [edited, setEdited] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
 
-  const changeGoal = (g: Goal) => {
+  const changeGoal = (g: Goal | '') => {
     setGoal(g)
-    if (!edited) setText(draftLetter(data, g))
+    if (g && !edited) setText(draftLetter(data, g))
   }
 
   const copy = async () => {
+    setCopyError(null)
+    if (!text.trim()) {
+      setCopied(false)
+      setCopyError('The letter is empty, so there is nothing to copy.')
+      return
+    }
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
@@ -123,17 +131,23 @@ function LetterEditor({ data }: { data: MyInfo }) {
       <div className="dashboard-card no-print">
         <div className="form-group">
           <label htmlFor="hl-goal">What are you asking for?</label>
-          <select id="hl-goal" value={goal} onChange={e => changeGoal(e.target.value as Goal)}>
+          <select id="hl-goal" value={goal} onChange={e => changeGoal(e.target.value as Goal | '')}>
+            <option value="" disabled>Choose one</option>
             {GOALS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
           </select>
         </div>
-        {edited && (
+        {edited && goal && (
           <button type="button" className="btn-link" onClick={() => { setText(draftLetter(data, goal)); setEdited(false) }}>
             Start over from my information
           </button>
         )}
       </div>
 
+      {!goal ? (
+        <div className="dashboard-card">
+          <p>Choose what you're asking your lender for, and we'll draft the letter. Not sure? Your professional can help you decide.</p>
+        </div>
+      ) : (
       <div className="dashboard-card">
         <label htmlFor="hl-text" className="no-print">Your letter (you can edit it)</label>
         <textarea
@@ -141,17 +155,19 @@ function LetterEditor({ data }: { data: MyInfo }) {
           className="letter-text"
           value={text}
           rows={24}
-          onChange={e => { setText(e.target.value); setEdited(true); setCopied(false) }}
+          onChange={e => { setText(e.target.value); setEdited(true); setCopied(false); setCopyError(null) }}
         />
         <div className="letter-print" aria-hidden="true">{text}</div>
         <div className="save-row no-print">
           <button type="button" className="btn btn-primary btn-small" onClick={() => window.print()}>Print</button>
           <button type="button" className="btn btn-secondary btn-small" onClick={copy}>{copied ? '✓ Copied' : 'Copy text'}</button>
+          {copyError && <div className="error-message" role="alert">{copyError}</div>}
         </div>
         <p className="form-note no-print">
           This letter isn't saved on SonderBe. Print it or copy it into an email to your professional.
         </p>
       </div>
+      )}
     </div>
   )
 }

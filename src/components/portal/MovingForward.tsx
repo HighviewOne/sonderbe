@@ -38,7 +38,7 @@ function ServiceList({ initialCounty }: { initialCounty: string }) {
 
   // No synchronous setState here — it runs from an effect
   const fetchAds = useCallback((c: string) => {
-    apiGet<{ ads: ServiceAd[] }>(`/ads?county=${encodeURIComponent(c)}`)
+    apiGet<{ ads: ServiceAd[] }>(`/services?county=${encodeURIComponent(c)}`)
       .then(res => {
         setAds(res.ads)
         setError(null)
@@ -62,7 +62,7 @@ function ServiceList({ initialCounty }: { initialCounty: string }) {
 
   // Counted for the advertiser's report; never blocks the link
   const trackClick = (id: string) => {
-    apiPost(`/ads/${id}/click`).catch(() => {})
+    apiPost(`/services/${id}/click`).catch(() => {})
   }
 
   return (

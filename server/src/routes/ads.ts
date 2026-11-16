@@ -22,7 +22,7 @@ function shuffle<T>(items: T[]): T[] {
   return a
 }
 
-// GET /api/ads/report/:token — the advertiser's private report (no login; the link is the key)
+// GET /api/services/report/:token — the advertiser's private report (no login; the link is the key)
 router.get('/report/:token', asyncHandler(async (req, res) => {
   const token = String(req.params.token)
   if (token.length < 20 || token.length > 60) {
@@ -39,7 +39,7 @@ router.get('/report/:token', asyncHandler(async (req, res) => {
   res.json(data)
 }))
 
-// GET /api/ads?county=Los Angeles
+// GET /api/services?county=Los Angeles
 router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const county = typeof req.query.county === 'string' ? req.query.county : ''
   if (!COUNTIES.includes(county)) {
@@ -74,7 +74,7 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
   res.json({ ads: shuffle(ads) })
 }))
 
-// POST /api/ads/:id/click — counted when a homeowner taps call / website
+// POST /api/services/:id/click — counted when a homeowner taps call / website
 router.post('/:id/click', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
   const id = String(req.params.id)
   if (!UUID_RE.test(id)) {

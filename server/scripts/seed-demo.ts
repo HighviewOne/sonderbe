@@ -306,7 +306,7 @@ const HOMEOWNERS: HomeownerSeed[] = [
     emails: [{ email: 'angela.work@example.com', label: 'work' }],
     case: {
       pro: 'agent', situation: 'behind', stage: 'documents_requested',
-      next_step: 'Send the remaining documents by email so I can open the short-sale file with your lender.',
+      next_step: 'Email the remaining documents to docs.lopez@example.com so I can open the short-sale file with your lender.',
       events: [
         { stage: 'matched', note: 'You chose Maria Lopez.', days: 9 },
         { stage: 'first_contact', note: 'Phone call: agreed to list the home as a short sale.', days: 8 },
@@ -432,6 +432,29 @@ async function seedCase(id: string, h: HomeownerSeed, c: CaseSeed, proIds: Recor
       request_reason: d.reason ?? null,
       last_received_at: d.lastReceived !== undefined ? daysAgo(d.lastReceived) : null
     }))).select('id, sort_order'), `documents ${h.email}`).sort((a, b) => a.sort_order - b.sort_order)
+    // Document history, so the pro's History panel shows earlier rounds (the app logs these as they happen)
+    const requestedDays = (c.events.find(e => e.stage === 'documents_requested') ?? c.events[0]).days
+    const proId = proIds[c.pro]
+    const history = c.documents.flatMap((d, i) => {
+      const base = { document_id: docs[i].id, match_request_id: request.id }
+      const rows: { round: number; action: string; actor_id: string; days: number; reason?: string }[] = [
+        { round: 1, action: 'requested', actor_id: proId, days: requestedDays }
+      ]
+      if ((d.round ?? 1) > 1) {
+        // An earlier copy was sent and received, then requested again
+        const got = d.lastReceived ?? 0
+        rows.push(
+          { round: 1, action: 'sent', actor_id: id, days: got + 1 },
+          { round: 1, action: 'received', actor_id: proId, days: got },
+          { round: d.round!, action: 'requested_again', actor_id: proId, days: Math.max(got - 1, d.sent ?? 0), reason: d.reason }
+        )
+      }
+      const round = d.round ?? 1
+      if (d.sent !== undefined) rows.push({ round, action: 'sent', actor_id: id, days: d.sent })
+      if (d.received !== undefined) rows.push({ round, action: 'received', actor_id: proId, days: d.received })
+      return rows.map(r => ({ ...base, round: r.round, action: r.action, actor_id: r.actor_id, reason: r.reason ?? null, created_at: daysAgo(r.days) }))
+    })
+    if (history.length) must(await db.from('case_document_history').insert(history), `document history ${h.email}`)
     if (c.notes) {
       must(await db.from('case_notes').insert(c.notes.map(n => ({
         match_request_id: request.id,

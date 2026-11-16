@@ -1,4 +1,5 @@
 import { Routes, Route, NavLink, Navigate, Link } from 'react-router-dom'
+import { NotFoundPage } from './NotFoundPage'
 import { useAccess } from '../hooks/useAccess'
 import type { Access } from '../hooks/useAccess'
 import { formatDate } from '../lib/format'
@@ -74,6 +75,7 @@ export function InvestorPage() {
             <Route path="search" element={<PropertySearch />} />
             <Route path="properties/:id" element={<PropertyDetail />} />
             <Route path="subscription" element={<SubscriptionStatus />} />
+            <Route path="*" element={<NotFoundPage home="/investor" />} />
           </Routes>
         </div>
       </div>

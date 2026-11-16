@@ -134,7 +134,7 @@ export function MyCase({ caseData, markSent, withdraw, sendNote, markNotesRead, 
         <details className="case-notes" open={unread_notes > 0}
           onToggle={e => { if ((e.target as HTMLDetailsElement).open && unread_notes > 0) markNotesRead(request.id).catch(() => {}) }}>
           <summary>
-            <strong>Notes with {proName} ({notes.length})</strong>
+            <strong>Notes with {proName} ({generalNotes.length})</strong>
             {unread_notes > 0 && <span className="unread-badge">{unread_notes} new</span>}
           </summary>
           <NotesThread notes={generalNotes} viewer="homeowner" otherName={proName} onSend={body => sendNote(request.id, body, null)} />
@@ -199,6 +199,7 @@ function DocumentRow({ doc, markSent, proName, notes, onNote }: {
         />
         <span className="doc-label">{doc.label}</span>
       </label>
+      {doc.round > 1 && <span className="round-badge" title={`${proName} asked for this again`}>Round {doc.round}</span>}
       <span className={`doc-status-chip ${status}`}>
         {status === 'received' ? `✓ Received ${formatDate(doc.received_at!)}`
           : status === 'sent' ? `Sent ${formatDate(doc.sent_at!)}`

@@ -3727,3 +3727,15 @@
 body:has(.demo-site-banner) {
   padding-bottom: 2rem;
 }
+
+/* Unknown address */
+.not-found-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 100px 1rem 3rem;
+  min-height: 50vh;
+}
+
+.not-found h1 {
+  margin-top: 0;
+}

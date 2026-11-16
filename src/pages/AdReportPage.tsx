@@ -25,7 +25,7 @@ export function AdReportPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch(`${BASE_URL}/ads/report/${encodeURIComponent(token)}`)
+    fetch(`${BASE_URL}/services/report/${encodeURIComponent(token)}`)
       .then(async r => {
         if (!r.ok) throw new Error('This report link is not valid. Ask SonderBe for a new one.')
         setReport(await r.json())

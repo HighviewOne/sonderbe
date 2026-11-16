@@ -24,7 +24,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/match` — homeowner (role client): GET own request + consent text + chosen professional + timeline + documents, POST choose a professional (`professional_id`, consent required; creates the request already `claimed`), PATCH /documents/:docId (mark sent + note), DELETE withdraw
   - `/api/leads` — subscribed professional (investorOnly): GET open leads in service counties (category counts only) + own clients (contact, item-level checklist, stage, timeline, documents), PUT /service-area, GET/PUT /profile (directory listing; license change clears `license_verified`; listing needs the no-upfront-fee pledge), POST /:id/stage, POST /:id/documents (`{label}` or `{standard:true}`), PATCH/DELETE /:id/documents/:docId, POST /:id/claim (legacy open pool), /:id/close. No release: a case never goes back to a pool (the homeowner consented to one professional). `professional_type` can't change while the professional has active clients (409 `type_locked`)
   - `/api/directory` — any logged-in user: GET ?county=&type= listed + subscribed professionals, A–Z (never paid ranking). `DIRECT_CONTACT_ONLY_TYPES` (attorneys, pending legal review) show contact details and can't be chosen
-  - `/api/ads` — GET ?county= active service ads (shuffled, counts views), POST /:id/click
+  - `/api/services` — GET ?county= active service ads (shuffled, counts views), POST /:id/click. Not `/api/ads`: ad blockers drop requests under `/api/ads/`
   - `/api/me` — homeowner only: GET (profile, info, extra emails, household, team), PUT /info, GET /documents (list built from the household), POST/DELETE /emails, POST/PUT/DELETE /household/:id, POST/PUT/DELETE /team/:id
   - `/api/brokerage` — GET/POST /invite/:token + /join (any logged-in user; invite email must match), then investorOnly: GET/POST/PUT /, POST /logo, POST/DELETE /invites, DELETE /agents/:id, POST /leave, GET /clients (broker's team view: per-agent counts and stages only, never homeowner names or details, since homeowners consented to one professional)
 - Dependencies: express, cors, helmet, multer, @supabase/supabase-js, dotenv, stripe, csv-parse, express-rate-limit
@@ -140,7 +140,7 @@ row and pays, agents join by invite link (`/#/join/<token>`) and are covered via
   `/investor/subscribe` (`POST /api/account/demo-subscription`). `account.ts demoMode()` refuses it for the live project
   ref no matter what the env says. Never set DEMO_MODE on Render.
 - Ads are managed by admins at `/admin/ads` (`/api/admin/ads` CRUD; blocks loan/debt/credit-repair/cash-buyer ads; movers
-  need a Cal-T number to go live). Each ad has a private report link `/#/ad-report/<token>` (`GET /api/ads/report/:token`,
+  need a Cal-T number to go live). Each ad has a private report link `/#/ad-report/<token>` (`GET /api/services/report/:token`,
   no login). Self-serve advertiser portal deliberately not built yet (revisit at ~15–20 advertisers). Migration 006.
 
 ## Migrated Files (use API instead of direct Supabase)
