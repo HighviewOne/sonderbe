@@ -1,4 +1,6 @@
 import { supabaseAdmin } from './config.js'
+import { accessFor } from './access.js'
+import type { Access } from './access.js'
 
 export type CaseEvent = { id: string; stage: string; note: string | null; created_at: string; by_homeowner: boolean }
 export type CaseDocument = {
@@ -173,4 +175,56 @@ export async function professionalContact(ids: string[]) {
     result.set(user_id, rest)
   }
   return result
+}
+
+// Close the open cases of professionals whose access is over (past read-only, or never subscribed).
+// The policy is that these cases close when read-only ends. Nothing runs on a timer, so this is called
+// wherever it matters: on homeowner and professional reads, and BEFORE anything that can restore a
+// professional's access (a renewal, joining a brokerage), so a renewed professional never gets back
+// a homeowner who consented while they were active. Agents of a broker among `ids` are included.
+// `known` = access already looked up for these ids. Returns the closed request ids, or null on a DB error.
+export async function closeCasesOfEnded(ids: string[], known?: Map<string, Access>): Promise<Set<string> | null> {
+  const closed = new Set<string>()
+  if (ids.length === 0) return closed
+  const { data: owned, error: ownedError } = await supabaseAdmin.from('brokerages').select('id').in('owner_id', ids)
+  if (ownedError) {
+    console.error('Failed to load brokerages for case closing:', ownedError)
+    return null
+  }
+  let all = ids
+  if (owned.length) {
+    const { data: agents, error: agentsError } = await supabaseAdmin.from('profiles').select('id').in('brokerage_id', owned.map(b => b.id))
+    if (agentsError) {
+      console.error('Failed to load agents for case closing:', agentsError)
+      return null
+    }
+    all = [...new Set([...ids, ...agents.map(a => a.id as string)])]
+  }
+  const access = known && all.every(id => known.has(id)) ? known : await accessFor(all)
+  if (access === null) return null
+  const ended = all.filter(id => {
+    const state = access.get(id)?.state
+    return state === 'ended' || state === 'none'
+  })
+  if (ended.length === 0) return closed
+  const { data: open, error } = await supabaseAdmin.from('match_requests')
+    .select('id, stage').in('claimed_by', ended).eq('status', 'claimed')
+  if (error) {
+    console.error('Failed to load cases to close:', error)
+    return null
+  }
+  await Promise.all(open.map(async r => {
+    const { data: updated, error: closeError } = await supabaseAdmin.from('match_requests')
+      .update({ status: 'closed', closed_reason: 'professional_inactive' })
+      .eq('id', r.id).eq('status', 'claimed').select('id')
+    if (closeError) {
+      console.error('Failed to close case for inactive professional:', closeError)
+      return
+    }
+    if (!updated?.length) return // closed by someone else in the meantime
+    closed.add(r.id)
+    // Written by SonderBe, not by either side
+    await addCaseEvent(r.id, r.stage, 'Your professional is no longer on SonderBe, so this case was closed. You can choose someone new.', null)
+  }))
+  return closed
 }

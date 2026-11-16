@@ -6,7 +6,7 @@ import type { AuthenticatedRequest } from '../types.js'
 import { COUNTIES, SITUATIONS, CHOSEN_CONSENT_TEXT, MAX_ACTIVE_CLAIMS, CATEGORY_OF } from '../matching.js'
 import { listedProfessionals } from './directory.js'
 import { accessFor, canWork } from '../access.js'
-import { caseDetails, addCaseEvent, UUID_RE, DOC_FIELDS, presentDocument, addDocHistory, professionalContact } from '../cases.js'
+import { caseDetails, addCaseEvent, closeCasesOfEnded, UUID_RE, DOC_FIELDS, presentDocument, addDocHistory, professionalContact } from '../cases.js'
 
 // Homeowner side of matching: the homeowner picks one professional from the directory,
 // then follows the case (stage, next step, timeline, document checklist).
@@ -34,18 +34,15 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
     res.status(500).json({ error: 'Failed to fetch your cases' })
     return
   }
+  const closed = await closeCasesOfEnded(claimedPros, access)
+  if (closed === null) {
+    res.status(500).json({ error: 'Failed to fetch your cases' })
+    return
+  }
   for (const r of requests) {
-    const a = r.claimed_by ? access.get(r.claimed_by) : undefined
-    if (r.status === 'claimed' && a && (a.state === 'ended' || a.state === 'none')) {
-      const { error: closeError } = await supabaseAdmin.from('match_requests')
-        .update({ status: 'closed', closed_reason: 'professional_inactive' }).eq('id', r.id).eq('status', 'claimed')
-      if (closeError) console.error('Failed to close case for inactive professional:', closeError)
-      else {
-        r.status = 'closed'
-        r.closed_reason = 'professional_inactive'
-        // Written by SonderBe, not by either side
-        await addCaseEvent(r.id, r.stage, 'Your professional is no longer on SonderBe, so this case was closed. You can choose someone new.', null)
-      }
+    if (closed.has(r.id)) {
+      r.status = 'closed'
+      r.closed_reason = 'professional_inactive'
     }
   }
 

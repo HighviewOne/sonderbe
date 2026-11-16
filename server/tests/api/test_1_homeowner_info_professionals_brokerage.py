@@ -171,9 +171,9 @@ if some_case:
     check('release route is gone (cases never go back to a pool)', s == 404, s)
 s, listing = call('GET', f'{API}/leads/profile', agent)
 body = {k: listing.get(k) for k in ['business_name', 'bio', 'website', 'license_number', 'listed']}
-body.update(pledge=bool(listing.get('no_upfront_fee_pledged_at')), professional_type='negotiator')
+body.update(pledge=bool(listing.get('no_upfront_fee_pledged_at')), professional_type='legal_professional')
 s, d = call('PUT', f'{API}/leads/profile', agent, body)
-check('type change blocked while professional has active clients', s == 409 and d.get('code') == 'type_locked', d)
+check('switching to a legal type blocked while professional has active clients', s == 409 and d.get('code') == 'type_locked', d)
 body['professional_type'] = listing['professional_type']
 s, _ = call('PUT', f'{API}/leads/profile', agent, body)
 check('same type still saves', s == 200, s)

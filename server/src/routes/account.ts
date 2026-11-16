@@ -4,6 +4,7 @@ import { requireAuth, invalidateRoleCache } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 import { accessFor } from '../access.js'
+import { closeCasesOfEnded } from '../cases.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -42,6 +43,11 @@ router.post('/demo-subscription', asyncHandler(async (req: AuthenticatedRequest,
   }
   if (req.userRole === 'admin') {
     res.status(400).json({ error: 'Admin accounts do not need a subscription' })
+    return
+  }
+  // Same as a real renewal: cases from before an expired subscription stay closed
+  if (await closeCasesOfEnded([req.userId!]) === null) {
+    res.status(500).json({ error: 'Failed to activate' })
     return
   }
   const now = new Date()

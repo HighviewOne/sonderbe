@@ -137,5 +137,49 @@ s, d = call('GET', f'{API}/services?county=Orange', home)
 check('off ad hidden', not any(a['business_name'] == 'Test Movers' for a in d['ads']))
 s, _ = call('DELETE', f'{API}/admin/ads/{ad["id"]}', admin)
 check('ad deleted', s == 200)
+# Legacy open pool: attorneys can't claim, and only same-category professionals can
+def new_homeowner(email):
+    call('POST', f'{SB}/auth/v1/admin/users', SVC, {'email': email, 'password': 'SonderDemo-2026', 'email_confirm': True}, apikey=SVC)
+    return uid(email)
+attorney, legal = login('pro.attorney@example.com'), login('pro.legal@example.com')
+ct = new_homeowner('claim.test@example.com')
+s, r = rest('POST', 'match_requests', {'homeowner_id': ct, 'category': 'real_estate', 'county': 'Los Angeles', 'situation': 'behind', 'contact_name': 'Claim Test', 'contact_email': 'claim.test@example.com', 'consent_text': 'test', 'status': 'open'})
+open_id = r[0]['id']
+s, d = call('GET', f'{API}/leads', attorney)
+check('attorney does not see open requests', s == 200 and not any(x['id'] == open_id for x in d['open']), d.get('open'))
+s, d = call('POST', f'{API}/leads/{open_id}/claim', attorney)
+check('attorney cannot claim an open request', s == 403, (s, d))
+s, d = call('GET', f'{API}/leads', legal)
+check('legal professional does not see real estate requests', s == 200 and not any(x['id'] == open_id for x in d['open']))
+s, d = call('POST', f'{API}/leads/{open_id}/claim', legal)
+check('legal professional cannot claim a real estate request', s == 409, (s, d))
+s, d = call('GET', f'{API}/leads', maria)
+check('agent sees the open request', any(x['id'] == open_id for x in d['open']))
+s, d = call('POST', f'{API}/leads/{open_id}/claim', maria)
+check('agent can claim it', s == 200 and d['status'] == 'claimed', (s, d))
+
+# Ended professional renews without the homeowner visiting: the old case stays closed
+rt = new_homeowner('renew.test@example.com')
+s, r = rest('POST', 'match_requests', {'homeowner_id': rt, 'category': 'real_estate', 'county': 'San Bernardino', 'situation': 'behind', 'contact_name': 'Renew Test', 'contact_email': 'renew.test@example.com', 'consent_text': 'test', 'status': 'claimed', 'claimed_by': leo, 'claimed_at': ago(40)})
+renew_case = r[0]['id']
+s, a = call('GET', f'{API}/account/access', lapsed)
+check('lapsed pro still ended before renewing', a['state'] == 'ended')
+s, _ = call('POST', f'{API}/account/demo-subscription', lapsed)
+check('ended pro renews', s == 200)
+s, d = call('GET', f'{API}/leads', lapsed)
+check('renewed pro does not get the old case back', s == 200 and not any(x['id'] == renew_case and x['status'] == 'claimed' for x in d['mine']), (s, [x['status'] for x in d.get('mine', [])]))
+s, r = rest('GET', f'match_requests?select=status,closed_reason&id=eq.{renew_case}')
+check('old case closed as professional_inactive', r[0]['status'] == 'closed' and r[0]['closed_reason'] == 'professional_inactive', r)
+
+# Type lock: same-category changes are fine with active clients, switching category is not
+s, p = call('GET', f'{API}/leads/profile', maria)
+body = {'business_name': p['business_name'], 'bio': p['bio'], 'website': p['website'], 'license_number': p['license_number'], 'pledge': bool(p['no_upfront_fee_pledged_at']), 'listed': p['listed']}
+s, d = call('PUT', f'{API}/leads/profile', maria, {**body, 'professional_type': 'broker'})
+check('agent with clients can become a broker', s == 200 and d['professional_type'] == 'broker', (s, d))
+s, d = call('PUT', f'{API}/leads/profile', maria, {**body, 'professional_type': 'attorney'})
+check('agent with clients cannot switch to legal', s == 409 and d.get('code') == 'type_locked', (s, d))
+s, d = call('PUT', f'{API}/leads/profile', maria, {**body, 'professional_type': 'agent'})
+check('broker back to agent', s == 200 and d['professional_type'] == 'agent')
+
 print(f'\n{ok} passed, {fail} failed')
 sys.exit(1 if fail else 0)

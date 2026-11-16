@@ -1,6 +1,7 @@
 import type { Response, NextFunction } from 'express'
 import type { AuthenticatedRequest } from '../types.js'
 import { accessFor } from '../access.js'
+import { closeCasesOfEnded } from '../cases.js'
 
 // Subscribed professionals (role 'investor'). Access comes from their own subscription or
 // their broker's (see access.ts):
@@ -34,6 +35,8 @@ export async function investorOnly(req: AuthenticatedRequest, res: Response, nex
       })
       return
     }
+    // Access is over: close their cases now rather than waiting for each homeowner to visit
+    await closeCasesOfEnded([req.userId!])
     res.status(403).json({ error: 'Active subscription required', code: 'subscription_required' })
   } catch (err) {
     console.error('Investor check error:', err)

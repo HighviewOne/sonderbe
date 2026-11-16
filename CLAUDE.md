@@ -22,7 +22,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/investor` — GET /properties (search/filter/paginate), /properties/:id, /stats, /subscription
   - `/api/stripe` — POST /create-checkout, /webhook (raw body), /portal
   - `/api/match` — homeowner (role client): GET own request + consent text + chosen professional + timeline + documents, POST choose a professional (`professional_id`, consent required; creates the request already `claimed`), PATCH /documents/:docId (mark sent + note), DELETE withdraw
-  - `/api/leads` — subscribed professional (investorOnly): GET open leads in service counties (category counts only) + own clients (contact, item-level checklist, stage, timeline, documents), PUT /service-area, GET/PUT /profile (directory listing; license change clears `license_verified`; listing needs the no-upfront-fee pledge), POST /:id/stage, POST /:id/documents (`{label}` or `{standard:true}`), PATCH/DELETE /:id/documents/:docId, POST /:id/claim (legacy open pool), /:id/close. No release: a case never goes back to a pool (the homeowner consented to one professional). `professional_type` can't change while the professional has active clients (409 `type_locked`)
+  - `/api/leads` — subscribed professional (investorOnly): GET open leads in service counties (category counts only) + own clients (contact, item-level checklist, stage, timeline, documents), PUT /service-area, GET/PUT /profile (directory listing; license change clears `license_verified`; listing needs the no-upfront-fee pledge), POST /:id/stage, POST /:id/documents (`{label}` or `{standard:true}`), PATCH/DELETE /:id/documents/:docId, POST /:id/claim (legacy open pool; same-category only, attorneys can't see or claim it), /:id/close. No release: a case never goes back to a pool (the homeowner consented to one professional). `professional_type` can't switch category (real estate ↔ legal) while the professional has active clients (409 `type_locked`); same-category changes and setting a first type are fine
   - `/api/directory` — any logged-in user: GET ?county=&type= listed + subscribed professionals, A–Z (never paid ranking). `DIRECT_CONTACT_ONLY_TYPES` (attorneys, pending legal review) show contact details and can't be chosen
   - `/api/services` — GET ?county= active service ads (shuffled, counts views), POST /:id/click. Not `/api/ads`: ad blockers drop requests under `/api/ads/`
   - `/api/me` — homeowner only: GET (profile, info, extra emails, household, team), PUT /info, GET /documents (list built from the household), POST/DELETE /emails, POST/PUT/DELETE /household/:id, POST/PUT/DELETE /team/:id
@@ -85,7 +85,7 @@ checklist (homeowner ticks "sent", professional ticks "received"; files never to
 `/investor` (My Clients, case manager per client) and `/investor/listing`. Sponsored service ads at `/portal/moving`.
 Migration `003_directory_and_tracker.sql` (profile listing fields, `match_requests.stage/next_step/outcome`, `case_events`,
 `case_documents`, `service_ads`, `increment_ad_counter`). Legal reasoning: the attorney brief Claude Doc linked in memory.
-- **API tests:** `server/tests/api/test_*.py` (Python stdlib only, 125 checks). `cd server && npm run test:api` with the
+- **API tests:** `server/tests/api/test_*.py` (Python stdlib only, 148 checks). `cd server && npm run test:api` with the
   backend running via `npm run dev:test`; it reseeds before each suite and at the end, and refuses the live project.
   Not in CI: it needs the test project's keys and a running backend (CI would need repo secrets; not set up).
   `RATE_LIMIT_MAX` in `.env.test.local` lifts the 200 req/15 min limiter for the suites.
@@ -133,8 +133,10 @@ row and pays, agents join by invite link (`/#/join/<token>`) and are covered via
 - Webhook promotes the role to 'investor' on checkout. Since 2026-11-15 it no longer demotes on cancel: it records
   `past_due_since` / `ended_at` and `access.ts` decides access (active, 14-day grace while payments fail, 14-day read-only
   after it ends, then ended). Read-only = GET only via `investorOnly` (402 `code: read_only` on writes), hidden from the
-  directory. Homeowners see "account no longer active" and can choose someone new; after read-only ends `GET /api/match`
-  closes the case (`closed_reason = 'professional_inactive'`). Choosing someone new keeps the document list (reset to
+  directory. Homeowners see "account no longer active" and can choose someone new; after read-only ends the case closes
+  (`closed_reason = 'professional_inactive'`) via `cases.ts closeCasesOfEnded`, run on homeowner/professional reads and
+  BEFORE anything that restores access (Stripe renewal, demo skip-payment, joining a brokerage), so a renewal never
+  reopens old cases. Choosing someone new keeps the document list (reset to
   "to send") and deletes the old professional's notes/timeline/history. Brokerage agents follow their broker's state. An agent who leaves or is removed gets 14 days read-only from `profiles.left_brokerage_at` (migration 007). Ending after a payment failure dates `ended_at` from the end of grace, so grace + read-only is at most 28 days; never-paid (`incomplete`) subscriptions get no read-only period. Re-picking: the old case's notes/timeline/history are deleted only after the new pick is saved; a pick that pushes a professional past `MAX_ACTIVE_CLAIMS` (concurrent picks) is undone.
 - **Demo payment bypass:** `DEMO_MODE=true` (only in `server/.env.test.local`) shows "Skip payment (test only)" on
   `/investor/subscribe` (`POST /api/account/demo-subscription`). `account.ts demoMode()` refuses it for the live project

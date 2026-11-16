@@ -5,10 +5,12 @@ import { investorOnly } from '../middleware/investorOnly.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 import {
-  COUNTIES, MAX_ACTIVE_CLAIMS, STAGES, OUTCOMES, PROFESSIONAL_TYPES, LICENSED_TYPES, STANDARD_DOCUMENTS
+  COUNTIES, MAX_ACTIVE_CLAIMS, STAGES, OUTCOMES, PROFESSIONAL_TYPES, LICENSED_TYPES, STANDARD_DOCUMENTS,
+  DIRECT_CONTACT_ONLY_TYPES, CATEGORY_OF
 } from '../matching.js'
+import type { ProfessionalType } from '../matching.js'
 import {
-  caseDetails, addCaseEvent, homeownerDetails, MY_INFORMATION_CONSENT_MARKER, DOC_FIELDS, presentDocument, addDocHistory
+  caseDetails, addCaseEvent, homeownerDetails, UUID_RE, MY_INFORMATION_CONSENT_MARKER, DOC_FIELDS, presentDocument, addDocHistory
 } from '../cases.js'
 import { documentsForHousehold, guessDocType, loadHousehold, DEFAULT_REFRESH_DAYS } from '../household.js'
 import type { DocType } from '../household.js'
@@ -20,20 +22,25 @@ import { uploadProfileImage } from '../images.js'
 const router = Router()
 router.use(requireAuth, investorOnly)
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_DOCUMENTS_PER_CASE = 40
 
-async function getServiceCounties(userId: string): Promise<string[] | null> {
+// Which open requests (legacy pool) this professional may see and take: their counties, and only
+// requests in their own category. Attorneys are direct-contact only (SonderBe never sends them
+// homeowner details), so category is null for them. Professionals from before types existed
+// (type not set) count as real estate.
+async function getClaimScope(userId: string): Promise<{ counties: string[]; category: 'real_estate' | 'legal' | null } | null> {
   const { data, error } = await supabaseAdmin
     .from('profiles')
-    .select('service_counties')
+    .select('service_counties, professional_type')
     .eq('id', userId)
     .single()
   if (error) {
     console.error('Failed to fetch service counties:', error)
     return null
   }
-  return data?.service_counties ?? []
+  const type = data?.professional_type as ProfessionalType | null
+  const category = type && DIRECT_CONTACT_ONLY_TYPES.includes(type) ? null : type ? CATEGORY_OF[type] : 'real_estate'
+  return { counties: data?.service_counties ?? [], category }
 }
 
 type CheckedRow = { user_id: string; category_index: number; item_index: number }
@@ -54,17 +61,19 @@ async function getCheckedItems(homeownerIds: string[]): Promise<CheckedRow[] | n
 
 // GET /api/leads — open requests in my counties (summary only) + requests I've claimed (full detail)
 router.get('/', asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const counties = await getServiceCounties(req.userId!)
-  if (counties === null) {
+  const scope = await getClaimScope(req.userId!)
+  if (scope === null) {
     res.status(500).json({ error: 'Failed to load leads' })
     return
   }
+  const { counties, category } = scope
 
-  const openQuery = counties.length > 0
+  const openQuery = counties.length > 0 && category
     ? supabaseAdmin
         .from('match_requests')
         .select('id, homeowner_id, county, situation, contact_name, created_at')
         .eq('status', 'open')
+        .eq('category', category)
         .in('county', counties)
         .order('created_at', { ascending: false })
         .limit(100)
@@ -166,9 +175,14 @@ router.post('/:id/claim', asyncHandler(async (req: AuthenticatedRequest, res) =>
     return
   }
 
-  const counties = await getServiceCounties(req.userId!)
-  if (counties === null) {
+  const scope = await getClaimScope(req.userId!)
+  if (scope === null) {
     res.status(500).json({ error: 'Failed to claim lead' })
+    return
+  }
+  const { counties, category: myCategory } = scope
+  if (!myCategory) {
+    res.status(403).json({ error: 'Homeowners contact attorneys directly, so attorneys cannot take requests here.' })
     return
   }
   if (counties.length === 0) {
@@ -197,6 +211,7 @@ router.post('/:id/claim', asyncHandler(async (req: AuthenticatedRequest, res) =>
     .update({ status: 'claimed', claimed_by: req.userId!, claimed_at: new Date().toISOString() })
     .eq('id', id)
     .eq('status', 'open')
+    .eq('category', myCategory)
     .in('county', counties)
     .select('id, status')
     .maybeSingle()
@@ -308,9 +323,11 @@ router.put('/profile', asyncHandler(async (req: AuthenticatedRequest, res) => {
     res.status(400).json({ error: 'You must agree to the no-upfront-fee pledge to be listed' })
     return
   }
-  // Homeowners chose this professional as a particular kind (e.g. an agent, not an attorney).
-  // Switching type mid-case would change what they agreed to share with, so finish those cases first.
-  if (professional_type !== current.professional_type) {
+  // Homeowners chose this professional as a particular kind (e.g. real estate, not legal help).
+  // Switching category mid-case would change what they agreed to share with, so finish those cases
+  // first. Same-category changes (agent → broker) and setting a first type are fine.
+  const currentType = current.professional_type as ProfessionalType | null
+  if (currentType && CATEGORY_OF[professional_type as ProfessionalType] !== CATEGORY_OF[currentType]) {
     const { count, error: countError } = await supabaseAdmin.from('match_requests')
       .select('id', { count: 'exact', head: true }).eq('claimed_by', req.userId!).eq('status', 'claimed')
     if (countError) {

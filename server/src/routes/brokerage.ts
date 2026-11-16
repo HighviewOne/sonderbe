@@ -7,7 +7,7 @@ import { requireAuth, invalidateRoleCache } from '../middleware/auth.js'
 import { investorOnly } from '../middleware/investorOnly.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
-import { UUID_RE } from '../cases.js'
+import { UUID_RE, closeCasesOfEnded } from '../cases.js'
 import { uploadProfileImage } from '../images.js'
 
 // Brokerages: a broker owns one and pays for it; agents join by invite link and are covered
@@ -80,6 +80,12 @@ router.post('/join', asyncHandler(async (req: AuthenticatedRequest, res) => {
     .select('id', { count: 'exact', head: true }).eq('homeowner_id', me.id).in('status', ['open', 'claimed'])
   if ((activeHomeownerCases ?? 0) > 0) {
     res.status(400).json({ error: 'This account has an active homeowner case. Use a separate account for your professional work.' })
+    return
+  }
+
+  // Joining gives access through the broker: close cases from before this agent's access ended first
+  if (await closeCasesOfEnded([me.id]) === null) {
+    res.status(500).json({ error: 'Failed to join the brokerage' })
     return
   }
 

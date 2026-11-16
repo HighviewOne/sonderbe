@@ -5,6 +5,7 @@ import { requireAuth, invalidateRoleCache } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 import { endedAtFor } from '../access.js'
+import { closeCasesOfEnded } from '../cases.js'
 
 const router = Router()
 
@@ -124,6 +125,8 @@ router.post('/webhook', asyncHandler(async (req, res) => {
         if (subscriptionId) {
           const subscription = await stripe.subscriptions.retrieve(subscriptionId) as unknown as SubscriptionWithPeriod
 
+          // Cases from before an expired subscription stay closed after renewing
+          await closeCasesOfEnded([userId])
           await supabaseAdmin
             .from('investor_subscriptions')
             .update({
@@ -168,6 +171,8 @@ router.post('/webhook', asyncHandler(async (req, res) => {
             : 'inactive'
           const now = new Date().toISOString()
 
+          // Close cases from before an expired subscription, before this update can restore access
+          await closeCasesOfEnded([sub.user_id])
           // Dates drive the grace and read-only periods (see access.ts). The professional keeps
           // their account and role; access is decided from these, not by demoting the role.
           await supabaseAdmin
