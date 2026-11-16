@@ -30,11 +30,29 @@ export async function uploadProfileImage(req: AuthenticatedRequest, res: Respons
     return null
   }
   const path = `${prefix}-${Date.now()}.${kind.ext}`
-  const { error } = await supabaseAdmin.storage.from(BUCKET).upload(path, file.buffer, { contentType: kind.mime, upsert: false })
+  const { error } = await supabaseAdmin.storage.from(BUCKET).upload(path, file.buffer, {
+    contentType: kind.mime, upsert: false,
+    // Short CDN cache, so a photo someone removes stops loading within minutes (default is an hour)
+    cacheControl: '300'
+  })
   if (error) {
     console.error('Failed to upload image:', error)
     res.status(500).json({ error: 'Failed to upload the image' })
     return null
   }
   return supabaseAdmin.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
+}
+
+// Delete an image we stored, from its public URL, once nothing points at it any more (a photo
+// removed or replaced). Only paths under `prefix` are touched, so a URL can never reach another
+// account's files. Best-effort: a failure is logged and never blocks the request.
+export async function removeProfileImage(url: string | null | undefined, prefix: string): Promise<void> {
+  if (!url) return
+  const marker = `/object/public/${BUCKET}/`
+  const at = url.indexOf(marker)
+  if (at === -1) return
+  const path = decodeURIComponent(url.slice(at + marker.length).split('?')[0])
+  if (!path.startsWith(prefix) || path.includes('..')) return
+  const { error } = await supabaseAdmin.storage.from(BUCKET).remove([path])
+  if (error) console.error('Failed to delete old image:', error)
 }

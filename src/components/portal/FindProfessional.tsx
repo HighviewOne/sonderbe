@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { FormEvent } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import type { DirectoryEntry, MatchInput, MatchRequest } from '../../hooks/useMatch'
@@ -32,20 +32,29 @@ export function FindProfessional({
   const [error, setError] = useState<string | null>(null)
   const [choosing, setChoosing] = useState<string | null>(null)
 
+  // Only the newest request may update the list, so a slow reply for an earlier county or type
+  // can't replace the one for the current selection
+  const latestRequest = useRef(0)
+
   // No synchronous setState here — it runs from an effect
   const fetchDirectory = useCallback((c: string, t: string) => {
     const params = new URLSearchParams({ county: c })
     if (t) params.set('type', t)
+    const request = ++latestRequest.current
     apiGet<{ professionals: DirectoryEntry[] }>(`/directory?${params}`)
       .then(res => {
+        if (request !== latestRequest.current) return
         setPros(res.professionals.filter(p => categoryOf[p.professional_type] === category))
         setError(null)
       })
       .catch(err => {
+        if (request !== latestRequest.current) return
         console.error('Error loading directory:', err)
         setError('Failed to load professionals. Please try again.')
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (request === latestRequest.current) setLoading(false)
+      })
   }, [category])
 
   useEffect(() => {

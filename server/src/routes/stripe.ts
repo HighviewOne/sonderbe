@@ -179,8 +179,12 @@ router.post('/webhook', asyncHandler(async (req, res) => {
             .from('investor_subscriptions')
             .update({
               status,
-              current_period_start: new Date(subscriptionObj.current_period_start * 1000).toISOString(),
-              current_period_end: new Date(subscriptionObj.current_period_end * 1000).toISOString(),
+              // Only a subscription that has been paid gets period dates; the deleted handler reads an empty
+              // start as "never paid" (no read-only period)
+              ...(status !== 'inactive' && {
+                current_period_start: new Date(subscriptionObj.current_period_start * 1000).toISOString(),
+                current_period_end: new Date(subscriptionObj.current_period_end * 1000).toISOString()
+              }),
               past_due_since: status === 'past_due' ? (sub.past_due_since ?? now) : null,
               // Keep the first end date; an ended subscription's clock never restarts
               ended_at: status === 'canceled' ? endedAtFor(sub.ended_at, sub.past_due_since)
@@ -205,7 +209,8 @@ router.post('/webhook', asyncHandler(async (req, res) => {
         if (sub) {
           const now = new Date().toISOString()
           // A subscription that never got a first payment never had access: no read-only period
-          const neverPaid = sub.status === 'inactive' && !sub.ended_at && !sub.current_period_start
+          const neverPaid = deletedSub.status === 'incomplete_expired'
+            || (sub.status === 'inactive' && !sub.ended_at && !sub.current_period_start)
           await supabaseAdmin
             .from('investor_subscriptions')
             .update({

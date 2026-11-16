@@ -181,5 +181,27 @@ check('agent with clients cannot switch to legal', s == 409 and d.get('code') ==
 s, d = call('PUT', f'{API}/leads/profile', maria, {**body, 'professional_type': 'agent'})
 check('broker back to agent', s == 200 and d['professional_type'] == 'agent')
 
+# Photos: replacing or removing one deletes the old public file
+def upload_avatar(token):
+    boundary = 'sonderbetestboundary'
+    png = b'\x89PNG\r\n\x1a\n' + b'0' * 32
+    data = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n').encode() + png + f'\r\n--{boundary}--\r\n'.encode()
+    req = urllib.request.Request(f'{API}/leads/avatar', method='POST', data=data,
+        headers={'Authorization': 'Bearer ' + token, 'Content-Type': f'multipart/form-data; boundary={boundary}'})
+    with urllib.request.urlopen(req) as r: return json.loads(r.read())['avatar_url']
+def public_status(url):
+    # Ask storage directly: the public URL is CDN-cached, so it can still answer after a delete
+    url = url.replace('/object/public/', '/object/authenticated/')
+    req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + SVC, 'apikey': SVC})
+    try:
+        with urllib.request.urlopen(req) as r: return r.status
+    except urllib.error.HTTPError as e: return e.code
+first = upload_avatar(maria)
+check('photo uploaded and public', public_status(first) == 200)
+second = upload_avatar(maria)
+check('replacing a photo deletes the old file', public_status(first) in (400, 404) and public_status(second) == 200)
+s, _ = call('DELETE', f'{API}/leads/avatar', maria)
+check('removing a photo deletes the file', s == 200 and public_status(second) in (400, 404))
+
 print(f'\n{ok} passed, {fail} failed')
 sys.exit(1 if fail else 0)

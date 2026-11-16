@@ -8,7 +8,7 @@ import { investorOnly } from '../middleware/investorOnly.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 import { UUID_RE, closeCasesOfEnded } from '../cases.js'
-import { uploadProfileImage } from '../images.js'
+import { uploadProfileImage, removeProfileImage } from '../images.js'
 
 // Brokerages: a broker owns one and pays for it; agents join by invite link and are covered
 // by the broker's subscription (see access.ts). The broker sees every client of the team.
@@ -234,9 +234,11 @@ router.post('/logo', imageUpload.single('file'), asyncHandler(async (req: Authen
   const { error } = await supabaseAdmin.from('brokerages').update({ logo_url: url }).eq('id', owned.id)
   if (error) {
     console.error('Failed to save logo url:', error)
+    await removeProfileImage(url, `brokerages/${owned.id}/`)
     res.status(500).json({ error: 'Failed to save the logo' })
     return
   }
+  await removeProfileImage(owned.logo_url, `brokerages/${owned.id}/`)
   res.json({ logo_url: url })
 }))
 

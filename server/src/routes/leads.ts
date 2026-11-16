@@ -15,7 +15,7 @@ import {
 import { documentsForHousehold, guessDocType, loadHousehold, DEFAULT_REFRESH_DAYS } from '../household.js'
 import type { DocType } from '../household.js'
 import multer from 'multer'
-import { uploadProfileImage } from '../images.js'
+import { uploadProfileImage, removeProfileImage } from '../images.js'
 
 // Professional-facing matching routes. "investor" is the DB role for any subscribed
 // professional; investorOnly checks the role and an active subscription.
@@ -372,25 +372,32 @@ const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize
 
 // POST /api/leads/avatar — profile picture (multipart "file": PNG, JPEG or WebP, 2 MB max)
 router.post('/avatar', imageUpload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const { data: before } = await supabaseAdmin.from('profiles').select('avatar_url').eq('id', req.userId!).single()
   const url = await uploadProfileImage(req, res, `${req.userId}/avatar`)
   if (!url) return
   const { error } = await supabaseAdmin.from('profiles').update({ avatar_url: url }).eq('id', req.userId!)
   if (error) {
     console.error('Failed to save avatar url:', error)
+    await removeProfileImage(url, `${req.userId}/`)
     res.status(500).json({ error: 'Failed to save your photo' })
     return
   }
+  // The replaced photo is public: delete it so the old link stops working
+  await removeProfileImage(before?.avatar_url, `${req.userId}/`)
   res.json({ avatar_url: url })
 }))
 
 // DELETE /api/leads/avatar
 router.delete('/avatar', asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const { data: before } = await supabaseAdmin.from('profiles').select('avatar_url').eq('id', req.userId!).single()
   const { error } = await supabaseAdmin.from('profiles').update({ avatar_url: null }).eq('id', req.userId!)
   if (error) {
     console.error('Failed to remove avatar:', error)
     res.status(500).json({ error: 'Failed to remove your photo' })
     return
   }
+  // Removing a photo for privacy has to delete the public file, not just the link
+  await removeProfileImage(before?.avatar_url, `${req.userId}/`)
   res.json({ avatar_url: null })
 }))
 
