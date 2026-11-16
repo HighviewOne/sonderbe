@@ -23,7 +23,7 @@ export function HomePage() {
   const [submitSuccess, setSubmitSuccess] = useState(false)
 
   const { user } = useAuth()
-  const { submitForm, submitting, error } = useSubmissions()
+  const { submitForm, submitting, error } = useSubmissions({ list: false })
 
   const toggleFaq = (index: number) => {
     setOpenFaqIndex(openFaqIndex === index ? null : index)

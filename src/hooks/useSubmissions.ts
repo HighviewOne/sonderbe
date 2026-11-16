@@ -11,7 +11,9 @@ interface SubmissionData {
   message?: string
 }
 
-export function useSubmissions() {
+// `list: false` for pages that only submit (the homepage form): skips loading the user's
+// submissions, which otherwise fails mid sign-out and shows "Failed to load submissions"
+export function useSubmissions({ list = true }: { list?: boolean } = {}) {
   const { user } = useAuth()
   const [submissions, setSubmissions] = useState<ContactSubmission[]>([])
   const [loading, setLoading] = useState(true)
@@ -21,7 +23,7 @@ export function useSubmissions() {
   // Only sets state in promise callbacks, so it's safe to call from the effect.
   // With no user, `loading` is derived as false below.
   const fetchSubmissions = useCallback(() => {
-    if (!user) return Promise.resolve()
+    if (!user || !list) return Promise.resolve()
     return apiGet<ContactSubmission[]>('/submissions')
       .then(setSubmissions)
       .catch(err => {
@@ -29,7 +31,7 @@ export function useSubmissions() {
         setError('Failed to load submissions')
       })
       .finally(() => setLoading(false))
-  }, [user])
+  }, [user, list])
 
   useEffect(() => {
     fetchSubmissions()
@@ -91,7 +93,7 @@ export function useSubmissions() {
 
   return {
     submissions,
-    loading: user ? loading : false,
+    loading: user && list ? loading : false,
     submitting,
     error,
     submitForm,

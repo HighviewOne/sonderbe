@@ -308,11 +308,12 @@ const HOMEOWNERS: HomeownerSeed[] = [
       pro: 'agent', situation: 'behind', stage: 'documents_requested',
       next_step: 'Email the remaining documents to docs.lopez@example.com so I can open the short-sale file with your lender.',
       events: [
-        { stage: 'matched', note: 'You chose Maria Lopez.', days: 9 },
-        { stage: 'first_contact', note: 'Phone call: agreed to list the home as a short sale.', days: 8 },
-        { stage: 'documents_requested', note: 'Sent the document list.', days: 6 }
+        { stage: 'matched', note: 'You chose Maria Lopez.', days: 46 },
+        { stage: 'first_contact', note: 'Phone call: agreed to list the home as a short sale.', days: 45 },
+        { stage: 'documents_requested', note: 'Sent the document list.', days: 43 }
       ],
       documents: [
+        // Received 40 days ago, so it's past the 30-day refresh and shows "due for update"
         { label: STANDARD_DOCS[0], type: 'bank_statement', sent: 41, received: 40 },
         { label: STANDARD_DOCS[1], type: 'tax_return', round: 2, reason: 'The 2024 return is missing Schedule 1.', lastReceived: 3, sent: 1, note: 'Re-sent 2024 with all schedules' },
         { label: STANDARD_DOCS[2], type: 'pay_stub' },
@@ -437,8 +438,10 @@ async function seedCase(id: string, h: HomeownerSeed, c: CaseSeed, proIds: Recor
     const proId = proIds[c.pro]
     const history = c.documents.flatMap((d, i) => {
       const base = { document_id: docs[i].id, match_request_id: request.id }
+      // Never date the request after the first send (keeps the History panel in order)
+      const firstSent = (d.round ?? 1) > 1 ? (d.lastReceived ?? 0) + 1 : d.sent
       const rows: { round: number; action: string; actor_id: string; days: number; reason?: string }[] = [
-        { round: 1, action: 'requested', actor_id: proId, days: requestedDays }
+        { round: 1, action: 'requested', actor_id: proId, days: Math.max(requestedDays, firstSent ?? 0) }
       ]
       if ((d.round ?? 1) > 1) {
         // An earlier copy was sent and received, then requested again

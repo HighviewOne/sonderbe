@@ -142,6 +142,9 @@ export function AdsManager() {
                 <div className="save-row">
                   <button className="btn btn-secondary btn-small" onClick={() => setEditing(ad.id)}>Edit</button>
                   <button className="btn-link" onClick={() => copyReport(ad)}>{copied === ad.id ? '✓ Report link copied' : 'Copy report link'}</button>
+                  {ad.report_token && (
+                    <a className="btn-link" href={reportLink(ad.report_token)} target="_blank" rel="noopener noreferrer">Open report</a>
+                  )}
                 </div>
               </>
             )}
