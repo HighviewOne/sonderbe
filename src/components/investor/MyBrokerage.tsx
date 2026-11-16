@@ -103,7 +103,6 @@ function BrokerageFields({ initial, submitLabel, onSubmit }: {
 
   return (
     <form onSubmit={submit}>
-      {error && <div className="error-message">{error}</div>}
       <div className="form-row">
         <div className="form-group grow-2">
           <label htmlFor="bk-name">Brokerage name</label>
@@ -120,6 +119,7 @@ function BrokerageFields({ initial, submitLabel, onSubmit }: {
       </div>
       <button type="submit" className="btn btn-primary btn-small" disabled={busy}>{busy ? 'Saving...' : submitLabel}</button>
       {saved && <span className="form-note"> ✓ Saved</span>}
+      {error && <div className="error-message" role="alert">{error}</div>}
     </form>
   )
 }

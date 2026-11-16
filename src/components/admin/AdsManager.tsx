@@ -195,7 +195,6 @@ function AdForm({ id, initial, onCancel, onSaved }: { id?: string; initial: Draf
   return (
     <form className="dashboard-card ad-form" onSubmit={submit}>
       <h3>{id ? 'Edit ad' : 'New ad'}</h3>
-      {error && <div className="error-message">{error}</div>}
       <div className="form-row">
         {input('business_name', 'Business name', { maxLength: 120, required: true })}
         <div className="form-group">
@@ -250,6 +249,7 @@ function AdForm({ id, initial, onCancel, onSaved }: { id?: string; initial: Draf
       </label>
       <div className="save-row">
         <button type="submit" className="btn btn-primary btn-small" disabled={busy}>{busy ? 'Saving...' : 'Save ad'}</button>
+        {error && <div className="error-message" role="alert">{error}</div>}
         <button type="button" className="btn btn-secondary btn-small" onClick={onCancel} disabled={busy}>Cancel</button>
         {id && <button type="button" className="btn-link" onClick={remove} disabled={busy}>Delete ad</button>}
       </div>

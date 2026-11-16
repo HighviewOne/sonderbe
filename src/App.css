@@ -97,6 +97,7 @@
 }
 
 .hero .btn-secondary {
+  background-color: transparent;
   border-color: var(--color-on-accent);
   color: var(--color-on-accent);
 }

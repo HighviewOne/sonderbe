@@ -138,7 +138,7 @@ const PROS: ProSeed[] = [
     key: 'grace', lapse: 'grace',
     email: 'pro.grace@example.com', full_name: 'Gina Torres', phone: '(805) 555-0131',
     professional_type: 'agent', business_name: 'Torres Home Solutions',
-    bio: 'Demo account: card payment failing, still in the 14-day grace period.',
+    bio: 'Ventura County agent helping families sell before the trustee sale. Evening and weekend calls are fine.',
     website: null, license_number: 'DEMO-DRE-04445555', license_verified: true,
     service_counties: ['Ventura', 'Los Angeles']
   },
@@ -146,7 +146,7 @@ const PROS: ProSeed[] = [
     key: 'lapsed', lapse: 'read_only',
     email: 'pro.lapsed@example.com', full_name: 'Leo Park', phone: '(909) 555-0177',
     professional_type: 'agent', business_name: 'Park Realty Partners',
-    bio: 'Demo account: subscription ended, read-only for 14 days.',
+    bio: 'Inland Empire short-sale agent. Se habla español.',
     website: null, license_number: 'DEMO-DRE-06667777', license_verified: true,
     service_counties: ['San Bernardino', 'Los Angeles']
   }
@@ -176,7 +176,8 @@ async function seedPros() {
         past_due_since: p.lapse === 'grace' ? daysAgo(3) : null,
         ended_at: p.lapse === 'read_only' ? daysAgo(2) : null,
         current_period_start: daysAgo(10),
-        current_period_end: daysAgo(-20)
+        // An ended subscription's period ends when it ended (admin shows this date)
+        current_period_end: p.lapse === 'read_only' ? daysAgo(2) : daysAgo(-20)
       }), `subscription ${p.email}`)
     }
     ids[p.key] = id

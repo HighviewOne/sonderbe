@@ -159,7 +159,6 @@ function ListingForm({ listing, onSaved, embedded }: { listing: Listing; onSaved
       </div>
 
       <form className="dashboard-card listing-form" onSubmit={handleSubmit}>
-        {error && <div className="error-message">{error}</div>}
 
         <div className="form-group">
           <label htmlFor="listing-type">I am a</label>
@@ -211,6 +210,7 @@ function ListingForm({ listing, onSaved, embedded }: { listing: Listing; onSaved
 
         <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save listing'}</button>
         {saved && <span className="form-note"> Saved.</span>}
+        {error && <div className="error-message" role="alert">{error}</div>}
       </form>
     </div>
   )

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -7,6 +7,7 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { user, profile, signOut, isAdmin, isInvestor } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
 
   const isHomePage = location.pathname === '/'
   const isPortalPage = location.pathname.startsWith('/portal')
@@ -14,8 +15,12 @@ export function Header() {
   const isInvestorPage = location.pathname.startsWith('/investor')
 
   const handleSignOut = async () => {
-    await signOut()
+    // Leave the protected page first. Otherwise the route guard sends us to /login
+    // remembering this page, and whoever signs in next lands here (a homeowner after
+    // a professional ends up on the subscribe paywall).
+    navigate('/', { replace: true })
     setMobileMenuOpen(false)
+    await signOut()
   }
 
   return (

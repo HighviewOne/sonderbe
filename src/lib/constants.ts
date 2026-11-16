@@ -29,7 +29,7 @@ export const checklistData = [
       "Last two years of W-2 forms",
       "Last two years of federal tax returns (all pages)",
       "Year-to-date profit & loss statement (if self-employed)",
-      "IRS Form 4506-T or 4506-EZ (to verify tax info)",
+      "IRS Form 4506-C, signed (lets your lender verify your tax returns)",
       "Unemployment benefit statements (if applicable)",
       "Social Security or disability award letters (if applicable)",
       "Pension or retirement income documentation",

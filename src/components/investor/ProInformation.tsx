@@ -79,7 +79,6 @@ function ContactForm({ loaded }: { loaded: Loaded }) {
     <form className="dashboard-card" onSubmit={submit}>
       <h2>Contact details</h2>
       <p className="form-note">Shown to clients who chose you, on their case page. Not shown in the public directory.</p>
-      {error && <div className="error-message">{error}</div>}
       <div className="form-row">
         {field('full_name', 'Full name', { maxLength: 100, required: true, autoComplete: 'name' })}
         <div className="form-group">
@@ -116,6 +115,7 @@ function ContactForm({ loaded }: { loaded: Loaded }) {
       </div>
       <button type="submit" className="btn btn-primary btn-small" disabled={busy}>{busy ? 'Saving...' : 'Save contact details'}</button>
       {saved && <span className="form-note"> ✓ Saved</span>}
+      {error && <div className="error-message" role="alert">{error}</div>}
     </form>
   )
 }
