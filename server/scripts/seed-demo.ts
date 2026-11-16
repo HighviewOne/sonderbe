@@ -520,7 +520,7 @@ async function seedAds() {
       description: 'Should never appear to homeowners.',
       phone: null, website: null, counties: ['Los Angeles'], active: false
     }
-  ]), 'service ads')
+  ].map(ad => ({ report_token: randomBytes(18).toString('base64url'), ...ad }))), 'service ads')
 }
 
 async function main() {

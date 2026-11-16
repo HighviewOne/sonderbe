@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 
 export function SignupForm() {
@@ -12,6 +12,7 @@ export function SignupForm() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const { signUp } = useAuth()
+  const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,11 +30,14 @@ export function SignupForm() {
 
     setLoading(true)
 
-    const { error } = await signUp(email, password, fullName, phone)
+    const { error, signedIn } = await signUp(email, password, fullName, phone)
 
     if (error) {
       setError(error.message)
       setLoading(false)
+    } else if (signedIn) {
+      // No email confirmation needed: go straight in instead of saying "check your email"
+      navigate('/portal', { replace: true })
     } else {
       setSuccess(true)
     }

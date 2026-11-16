@@ -11,7 +11,7 @@ interface AuthContextType {
   profile: Profile | null
   session: Session | null
   loading: boolean
-  signUp: (email: string, password: string, fullName?: string, phone?: string) => Promise<{ error: AuthError | null }>
+  signUp: (email: string, password: string, fullName?: string, phone?: string) => Promise<{ error: AuthError | null; signedIn: boolean }>
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>
@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signUp = async (email: string, password: string, fullName?: string, phone?: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -88,7 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })
 
-    return { error }
+    // signedIn: the project doesn't require email confirmation (the demo/test project), so there's a session now
+    return { error, signedIn: Boolean(data.session) }
   }
 
   const signIn = async (email: string, password: string) => {
