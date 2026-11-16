@@ -1,6 +1,6 @@
 import type { Response, NextFunction } from 'express'
 import type { AuthenticatedRequest } from '../types.js'
-import { accessFor } from '../access.js'
+import { accessFor, canWork } from '../access.js'
 import { closeCasesOfEnded } from '../cases.js'
 
 // Subscribed professionals (role 'investor'). Access comes from their own subscription or
@@ -20,7 +20,7 @@ export async function investorOnly(req: AuthenticatedRequest, res: Response, nex
       res.status(500).json({ error: 'Failed to verify subscription' })
       return
     }
-    if (access.state === 'active' || access.state === 'grace') {
+    if (canWork(access)) {
       next()
       return
     }

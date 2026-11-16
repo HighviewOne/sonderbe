@@ -57,7 +57,7 @@ router.get('/', requireAuth, asyncHandler(async (req: AuthenticatedRequest, res)
           .select('id, full_name, email, phone, business_name, professional_type, website, license_number, license_verified, avatar_url')
           .in('id', proIds)
       : Promise.resolve({ data: [], error: null }),
-    proIds.length ? listedProfessionals({ ids: proIds }) : Promise.resolve([])
+    proIds.length ? listedProfessionals({ ids: proIds }, access) : Promise.resolve([])
   ])
   if (details === null) {
     res.status(500).json({ error: 'Failed to fetch your cases' })

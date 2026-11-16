@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
 import { professionalsWithAccess } from '../access.js'
+import type { Access } from '../access.js'
 import {
   COUNTIES, PROFESSIONAL_TYPES, LICENSED_TYPES, DIRECT_CONTACT_ONLY_TYPES, MAX_ACTIVE_CLAIMS,
   type ProfessionalType
@@ -35,7 +36,8 @@ export type DirectoryEntry = {
 
 // Professionals who are listed, have a type and pledge, and hold an active subscription.
 // Returns null on a database error.
-export async function listedProfessionals(filter: { county?: string; type?: string; id?: string; ids?: string[] }): Promise<DirectoryEntry[] | null> {
+// `access` = access already looked up for these professionals (saves the same queries twice)
+export async function listedProfessionals(filter: { county?: string; type?: string; id?: string; ids?: string[] }, access?: Map<string, Access>): Promise<DirectoryEntry[] | null> {
   let query = supabaseAdmin
     .from('profiles')
     .select('id, full_name, email, phone, business_name, professional_type, bio, website, license_number, license_verified, service_counties, avatar_url, brokerage_id')
@@ -58,7 +60,7 @@ export async function listedProfessionals(filter: { county?: string; type?: stri
   const ids = pros.map(p => p.id)
   const brokerageIds = [...new Set(pros.map(p => p.brokerage_id).filter((b): b is string => Boolean(b)))]
   const [active, claims, brokerages] = await Promise.all([
-    professionalsWithAccess(ids),
+    professionalsWithAccess(ids, access),
     supabaseAdmin.from('match_requests').select('claimed_by').in('claimed_by', ids).eq('status', 'claimed'),
     brokerageIds.length
       ? supabaseAdmin.from('brokerages').select('id, name, logo_url').in('id', brokerageIds)

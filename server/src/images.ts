@@ -1,8 +1,12 @@
 import type { Response } from 'express'
+import multer from 'multer'
 import { supabaseAdmin } from './config.js'
 import type { AuthenticatedRequest } from './types.js'
 
 const BUCKET = 'profile-images'
+
+// Multipart parser for photo and logo uploads (2 MB, kept in memory until checked and stored)
+export const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } })
 
 // Identify the image from its first bytes, not the client-supplied type or name
 function sniffImage(buf: Buffer): { ext: string; mime: string } | null {

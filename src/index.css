@@ -30,6 +30,10 @@
   --tone-neutral-fg: #555;
   --tone-pink-bg: #fce7f3;
   --tone-pink-fg: #9d174d;
+  /* Loud, same in both themes: demo-site banner and numbered callouts (white text on them) */
+  --color-demo-banner: #b45309;
+  --color-callout: #c2410c;
+  --color-on-strong: #fff;
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);

@@ -9,13 +9,13 @@ import {
   DIRECT_CONTACT_ONLY_TYPES, CATEGORY_OF
 } from '../matching.js'
 import type { ProfessionalType } from '../matching.js'
+import { EMAIL_RE } from '../validation.js'
 import {
   caseDetails, addCaseEvent, homeownerDetails, UUID_RE, MY_INFORMATION_CONSENT_MARKER, DOC_FIELDS, presentDocument, addDocHistory
 } from '../cases.js'
 import { documentsForHousehold, guessDocType, loadHousehold, DEFAULT_REFRESH_DAYS } from '../household.js'
 import type { DocType } from '../household.js'
-import multer from 'multer'
-import { uploadProfileImage, removeProfileImage } from '../images.js'
+import { uploadProfileImage, removeProfileImage, imageUpload } from '../images.js'
 
 // Professional-facing matching routes. "investor" is the DB role for any subscribed
 // professional; investorOnly checks the role and an active subscription.
@@ -368,7 +368,6 @@ router.put('/profile', asyncHandler(async (req: AuthenticatedRequest, res) => {
   res.json(data)
 }))
 
-const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } })
 
 // POST /api/leads/avatar — profile picture (multipart "file": PNG, JPEG or WebP, 2 MB max)
 router.post('/avatar', imageUpload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res) => {
@@ -835,7 +834,7 @@ router.put('/info', asyncHandler(async (req: AuthenticatedRequest, res) => {
     res.status(400).json({ error: 'ZIP code must be 5 digits' })
     return
   }
-  if (row.document_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.document_email as string)) {
+  if (row.document_email && !EMAIL_RE.test(row.document_email as string)) {
     res.status(400).json({ error: 'Please enter a valid email for documents, or leave it blank' })
     return
   }

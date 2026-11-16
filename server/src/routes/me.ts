@@ -6,6 +6,7 @@ import type { AuthenticatedRequest } from '../types.js'
 import { COUNTIES, RELATIONSHIPS, INCOME_TYPES, HARDSHIP_REASONS, TEAM_STATUSES } from '../matching.js'
 import { loadHousehold, documentsForHousehold } from '../household.js'
 import { UUID_RE } from '../cases.js'
+import { EMAIL_RE } from '../validation.js'
 
 // Homeowner "My Information": entered once, reused everywhere (document lists, hardship
 // letter, what the chosen professional sees). Homeowner accounts only.
@@ -23,7 +24,6 @@ const INFO_FIELDS = 'property_street, property_unit, property_city, property_zip
   'servicer_name, hardship_reasons, hardship_details, updated_at'
 const MEMBER_FIELDS = 'id, is_self, full_name, relationship, on_mortgage, income_types, employer'
 const TEAM_FIELDS = 'id, role, directory_profile_id, name, firm, phone, email, status, notes, created_at'
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 type Check = { ok: true; value: string | null } | { ok: false }
 function text(v: unknown, max: number): Check {

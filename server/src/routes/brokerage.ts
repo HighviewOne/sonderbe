@@ -1,21 +1,20 @@
 import { Router } from 'express'
 import type { Response } from 'express'
 import { randomBytes } from 'node:crypto'
-import multer from 'multer'
 import { supabaseAdmin } from '../config.js'
 import { requireAuth, invalidateRoleCache } from '../middleware/auth.js'
 import { investorOnly } from '../middleware/investorOnly.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest } from '../types.js'
-import { UUID_RE, closeCasesOfEnded } from '../cases.js'
-import { uploadProfileImage, removeProfileImage } from '../images.js'
+import { closeCasesOfEnded } from '../cases.js'
+import { UUID_RE, EMAIL_RE } from '../validation.js'
+import { uploadProfileImage, removeProfileImage, imageUpload } from '../images.js'
 
 // Brokerages: a broker owns one and pays for it; agents join by invite link and are covered
 // by the broker's subscription (see access.ts). The broker sees every client of the team.
 const router = Router()
 router.use(requireAuth)
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const BROKERAGE_FIELDS = 'id, owner_id, name, website, dre_number, logo_url'
 const MAX_PENDING_INVITES = 50
 
@@ -223,7 +222,6 @@ router.put('/', asyncHandler(async (req: AuthenticatedRequest, res) => {
   res.json(data)
 }))
 
-const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } })
 
 // POST /api/brokerage/logo — multipart "file"
 router.post('/logo', imageUpload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res) => {

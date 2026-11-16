@@ -91,11 +91,12 @@ export async function accessFor(ids: string[]): Promise<Map<string, Access> | nu
   return result
 }
 
-// Professionals who can work right now (active or in a payment grace period)
-export async function professionalsWithAccess(ids: string[]): Promise<Set<string> | null> {
-  const access = await accessFor(ids)
-  if (access === null) return null
-  return new Set([...access].filter(([, a]) => a.state === 'active' || a.state === 'grace').map(([id]) => id))
-}
-
+// Can work right now: active, or in a payment grace period
 export const canWork = (a: Access | undefined) => a?.state === 'active' || a?.state === 'grace'
+
+// Professionals who can work right now. `known` = access already looked up for these ids.
+export async function professionalsWithAccess(ids: string[], known?: Map<string, Access>): Promise<Set<string> | null> {
+  const access = known && ids.every(id => known.has(id)) ? known : await accessFor(ids)
+  if (access === null) return null
+  return new Set(ids.filter(id => canWork(access.get(id))))
+}

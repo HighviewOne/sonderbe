@@ -9,6 +9,7 @@ import { COUNTIES } from '../matching.js'
 import { UUID_RE } from '../cases.js'
 import multer from 'multer'
 import { parse } from 'csv-parse/sync'
+import { EMAIL_RE } from '../validation.js'
 
 const router = Router()
 
@@ -489,7 +490,7 @@ function adInput(b: Record<string, unknown>): { error: string } | { row: Record<
   if ((row.counties as unknown[]).some(c => typeof c !== 'string' || !COUNTIES.includes(c))) return { error: 'Unknown county' }
   if (row.active && (row.counties as unknown[]).length === 0) return { error: 'Choose at least one county before turning the ad on' }
   if (row.website && !/^https?:\/\/\S+$/i.test(row.website as string)) return { error: 'Website must start with http:// or https://' }
-  if (row.contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.contact_email as string)) return { error: 'Contact email is not valid' }
+  if (row.contact_email && !EMAIL_RE.test(row.contact_email as string)) return { error: 'Contact email is not valid' }
   if (row.monthly_price !== null && (!Number.isFinite(row.monthly_price) || (row.monthly_price as number) < 0)) return { error: 'Monthly price must be a number' }
   for (const d of ['starts_on', 'ends_on']) {
     if (row[d] && (typeof row[d] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row[d] as string))) return { error: 'Dates must be YYYY-MM-DD' }

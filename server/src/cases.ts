@@ -64,7 +64,7 @@ export async function addDocHistory(
   if (error) console.error('Failed to record document history:', error)
 }
 
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export { UUID_RE } from './validation.js'
 
 // Timeline + document checklist for a set of match requests. Returns null on a DB error.
 type Details = { events: CaseEvent[]; documents: CaseDocument[]; notes: CaseNote[] }
