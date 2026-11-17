@@ -89,6 +89,16 @@ router.post('/create-checkout', requireAuth, asyncHandler(async (req: Authentica
   res.json({ url: session.url })
 }))
 
+// A failed DB write must not be acknowledged: a 500 makes Stripe retry the event (every handler
+// below is safe to run twice), where a 200 would lose the change for good.
+function orThrow<T extends { error: unknown }>(result: T, what: string): T {
+  if (result.error) throw new Error(`${what}: ${JSON.stringify(result.error)}`)
+  return result
+}
+async function closeOrThrow(userIds: string[]) {
+  if (await closeCasesOfEnded(userIds) === null) throw new Error('Failed to close cases of an ended professional')
+}
+
 // POST /api/stripe/webhook — Stripe webhook handler (raw body parsed in index.ts)
 router.post('/webhook', asyncHandler(async (req, res) => {
   const stripe = getStripe()
@@ -126,8 +136,8 @@ router.post('/webhook', asyncHandler(async (req, res) => {
           const subscription = await stripe.subscriptions.retrieve(subscriptionId) as unknown as SubscriptionWithPeriod
 
           // Cases from before an expired subscription stay closed after renewing
-          await closeCasesOfEnded([userId])
-          await supabaseAdmin
+          await closeOrThrow([userId])
+          orThrow(await supabaseAdmin
             .from('investor_subscriptions')
             .update({
               stripe_subscription_id: subscriptionId,
@@ -139,13 +149,13 @@ router.post('/webhook', asyncHandler(async (req, res) => {
               ended_at: null,
               updated_at: new Date().toISOString()
             })
-            .eq('user_id', userId)
+            .eq('user_id', userId), 'activate subscription')
 
           // Update user role to investor
-          await supabaseAdmin
+          orThrow(await supabaseAdmin
             .from('profiles')
             .update({ role: 'investor', updated_at: new Date().toISOString() })
-            .eq('id', userId)
+            .eq('id', userId), 'set professional role')
           invalidateRoleCache(userId)
         }
         break
@@ -155,11 +165,12 @@ router.post('/webhook', asyncHandler(async (req, res) => {
         const subscriptionObj = event.data.object as SubscriptionWithPeriod
         const customerId = subscriptionObj.customer as string
 
-        const { data: sub } = await supabaseAdmin
+        // No row = not one of ours (e.g. another product on the account): nothing to do
+        const { data: sub } = orThrow(await supabaseAdmin
           .from('investor_subscriptions')
           .select('user_id, past_due_since, ended_at')
           .eq('stripe_customer_id', customerId)
-          .single()
+          .maybeSingle(), 'load subscription')
 
         if (sub) {
           // 'unpaid' = Stripe stopped retrying: treat as ended. 'incomplete' / 'incomplete_expired'
@@ -172,10 +183,10 @@ router.post('/webhook', asyncHandler(async (req, res) => {
           const now = new Date().toISOString()
 
           // Close cases from before an expired subscription, before this update can restore access
-          await closeCasesOfEnded([sub.user_id])
+          await closeOrThrow([sub.user_id])
           // Dates drive the grace and read-only periods (see access.ts). The professional keeps
           // their account and role; access is decided from these, not by demoting the role.
-          await supabaseAdmin
+          orThrow(await supabaseAdmin
             .from('investor_subscriptions')
             .update({
               status,
@@ -191,7 +202,7 @@ router.post('/webhook', asyncHandler(async (req, res) => {
                 : status === 'inactive' ? sub.ended_at : null,
               updated_at: now
             })
-            .eq('stripe_customer_id', customerId)
+            .eq('stripe_customer_id', customerId), 'update subscription')
         }
         break
       }
@@ -200,18 +211,18 @@ router.post('/webhook', asyncHandler(async (req, res) => {
         const deletedSub = event.data.object as SubscriptionWithPeriod
         const customerId = deletedSub.customer as string
 
-        const { data: sub } = await supabaseAdmin
+        const { data: sub } = orThrow(await supabaseAdmin
           .from('investor_subscriptions')
           .select('user_id, status, ended_at, past_due_since, current_period_start')
           .eq('stripe_customer_id', customerId)
-          .single()
+          .maybeSingle(), 'load subscription')
 
         if (sub) {
           const now = new Date().toISOString()
           // A subscription that never got a first payment never had access: no read-only period
           const neverPaid = deletedSub.status === 'incomplete_expired'
             || (sub.status === 'inactive' && !sub.ended_at && !sub.current_period_start)
-          await supabaseAdmin
+          orThrow(await supabaseAdmin
             .from('investor_subscriptions')
             .update({
               status: 'canceled',
@@ -219,14 +230,15 @@ router.post('/webhook', asyncHandler(async (req, res) => {
               past_due_since: null,
               updated_at: now
             })
-            .eq('stripe_customer_id', customerId)
+            .eq('stripe_customer_id', customerId), 'end subscription')
         }
         break
       }
     }
   } catch (err) {
     console.error(`Webhook handler error for ${event.type}:`, err)
-    // Still return 200 to Stripe so it doesn't retry
+    res.status(500).json({ error: 'Webhook handler failed' })
+    return
   }
 
   res.json({ received: true })

@@ -10,7 +10,8 @@ import {
   PropertyForm,
   CsvUpload,
   InvestorList,
-  AdsManager
+  AdsManager,
+  LicenseManager
 } from '../components/admin'
 
 export function AdminPage() {
@@ -39,6 +40,9 @@ export function AdminPage() {
           <NavLink to="/admin/ads" className={({ isActive }) => isActive ? 'active' : ''}>
             Ads
           </NavLink>
+          <NavLink to="/admin/licenses" className={({ isActive }) => isActive ? 'active' : ''}>
+            Licenses
+          </NavLink>
         </nav>
 
         <div className="admin-content">
@@ -54,6 +58,7 @@ export function AdminPage() {
             <Route path="properties/csv" element={<CsvUpload />} />
             <Route path="investors" element={<InvestorList />} />
             <Route path="ads" element={<AdsManager />} />
+            <Route path="licenses" element={<LicenseManager />} />
             <Route path="*" element={<NotFoundPage home="/admin" />} />
           </Routes>
         </div>

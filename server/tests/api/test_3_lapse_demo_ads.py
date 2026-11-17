@@ -181,6 +181,36 @@ check('agent with clients cannot switch to legal', s == 409 and d.get('code') ==
 s, d = call('PUT', f'{API}/leads/profile', maria, {**body, 'professional_type': 'agent'})
 check('broker back to agent', s == 200 and d['professional_type'] == 'agent')
 
+# License verification (admin)
+maria_id = uid('pro.agent@example.com'); tony_id = uid('pro.negotiator@example.com')
+rest('PATCH', f'profiles?id=eq.{maria_id}', {'license_verified': False})
+s, _ = call('GET', f'{API}/admin/licenses', maria)
+check('licenses: admin only', s == 403)
+s, d = call('GET', f'{API}/admin/licenses?status=pending', admin)
+mrow = next((p for p in d.get('professionals', []) if p['id'] == maria_id), None)
+check('licenses: unverified number is listed to check', s == 200 and mrow is not None, (s, d))
+check('licenses: unlicensed types are not listed', not any(p['id'] == tony_id for p in d['professionals']))
+s, d = call('GET', f'{API}/admin/licenses?status=bogus', admin)
+check('licenses: unknown filter refused', s == 400)
+s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': True, 'license_number': 'DEMO-WRONG'})
+check('licenses: verifying a number that is no longer on file is refused', s == 409 and d.get('code') == 'license_changed', (s, d))
+s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': True, 'license_number': mrow['license_number']})
+check('licenses: admin marks verified', s == 200 and d['license_verified'] is True, (s, d))
+s, d = call('GET', f'{API}/directory?county=Los%20Angeles', home)
+check('licenses: directory shows verified', any(p['id'] == maria_id and p['license_verified'] for p in d['professionals']))
+s, d = call('GET', f'{API}/admin/licenses?status=verified', admin)
+check('licenses: now under verified', any(p['id'] == maria_id for p in d['professionals']))
+s, d = call('PATCH', f'{API}/admin/licenses/{tony_id}', admin, {'verified': True, 'license_number': 'X'})
+check('licenses: unlicensed professional cannot be verified', s == 404)
+s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': 'yes'})
+check('licenses: bad body refused', s == 400)
+s, p = call('GET', f'{API}/leads/profile', maria)
+body = {'business_name': p['business_name'], 'bio': p['bio'], 'website': p['website'], 'pledge': True, 'listed': p['listed'], 'professional_type': p['professional_type']}
+s, d = call('PUT', f'{API}/leads/profile', maria, {**body, 'license_number': 'DEMO-DRE-09999999'})
+check('licenses: changing the number clears verification', s == 200 and d['license_verified'] is False, (s, d))
+s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': True, 'license_number': mrow['license_number']})
+check('licenses: old number can no longer be verified', s == 409)
+
 # Photos: replacing or removing one deletes the old public file
 def upload_avatar(token):
     boundary = 'sonderbetestboundary'

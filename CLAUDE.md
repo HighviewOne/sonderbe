@@ -18,7 +18,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/checklist` — GET own, PUT upsert, GET /:userId (admin)
   - `/api/submissions` — GET (own or all if admin), POST (optional auth), PATCH /:id (admin)
   - `/api/documents` — GET own, POST /upload (multer 10MB), DELETE /:id, GET /:id/download, GET /user/:userId (admin), PATCH /:id (admin)
-  - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads
+  - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads, /ads (CRUD), GET /licenses?status=pending|verified|missing|all + PATCH /licenses/:id `{verified, license_number}` (409 `license_changed` if the number on file differs, so a number changed mid-check is never marked verified)
   - `/api/investor` — GET /properties (search/filter/paginate), /properties/:id, /stats, /subscription
   - `/api/stripe` — POST /create-checkout, /webhook (raw body), /portal
   - `/api/match` — homeowner (role client): GET own request + consent text + chosen professional + timeline + documents, POST choose a professional (`professional_id`, consent required; creates the request already `claimed`), PATCH /documents/:docId (mark sent + note), DELETE withdraw
@@ -41,7 +41,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
 - Investor routes: sort column whitelist, `isNaN` guard on equity filter parseFloat, pagination bounds-checking
 - Submissions: input validation (string length limits, basic email format, phone length)
 - Checklist: type validation (numbers/boolean) + bounds checking on index values
-- Stripe webhook: DB operations wrapped in try-catch (still returns 200 to Stripe), `as any` replaced with `SubscriptionWithPeriod` interface, logs missing `userId` in metadata
+- Stripe webhook: a failed DB write returns **500** so Stripe retries the event (every handler is safe to run twice); unknown customers and a missing `userId` get 200 and a log line. `as any` replaced with `SubscriptionWithPeriod`. `tests/api/test_4_stripe_webhook.py` signs its own events with `STRIPE_WEBHOOK_SECRET` from `.env.test.local` (local-only value + placeholder `STRIPE_SECRET_KEY`); `checkout.session.completed` isn't covered there because it calls the Stripe API
 - SSL config: `rejectUnauthorized: true` in production, `false` in dev (based on `NODE_ENV`)
 
 ## Frontend API Layer
@@ -85,7 +85,7 @@ checklist (homeowner ticks "sent", professional ticks "received"; files never to
 `/investor` (My Clients, case manager per client) and `/investor/listing`. Sponsored service ads at `/portal/moving`.
 Migration `003_directory_and_tracker.sql` (profile listing fields, `match_requests.stage/next_step/outcome`, `case_events`,
 `case_documents`, `service_ads`, `increment_ad_counter`). Legal reasoning: the attorney brief Claude Doc linked in memory.
-- **API tests:** `server/tests/api/test_*.py` (Python stdlib only, 151 checks). `cd server && npm run test:api` with the
+- **API tests:** `server/tests/api/test_*.py` (Python stdlib only, 4 suites). `cd server && npm run test:api` with the
   backend running via `npm run dev:test`; it reseeds before each suite and at the end, and refuses the live project.
   Not in CI: it needs the test project's keys and a running backend (CI would need repo secrets; not set up).
   `RATE_LIMIT_MAX` in `.env.test.local` lifts the 200 req/15 min limiter for the suites.
@@ -93,8 +93,9 @@ Migration `003_directory_and_tracker.sql` (profile listing fields, `match_reques
   `server/.env.test.local` + `.env.test.local`. `npm run dev:test` in root and `server/` runs the app against it;
   `cd server && npm run seed:demo` wipes and recreates demo accounts (`*@example.com`, password `SonderDemo-2026`) and ads.
   The seed script refuses the live project ref.
-- Not built yet: admin screens for ads and license verification (set `license_verified` / ads in the DB for now);
-  003 and 004 are not applied to the live project.
+- License verification: admin screen `/admin/licenses` (`LicenseManager.tsx`) lists agents, brokers and attorneys with a
+  link to the DRE or State Bar public lookup and Mark verified / Remove verification. It records no who/when (would need a
+  migration). 003–007 are not applied to the live project.
 
 ## Homeowner information, multiple professionals, brokerages (2026-11-15, same branch)
 

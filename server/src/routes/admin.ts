@@ -5,7 +5,7 @@ import { requireAuth } from '../middleware/auth.js'
 import { adminOnly } from '../middleware/adminOnly.js'
 import { asyncHandler } from '../middleware/asyncHandler.js'
 import type { AuthenticatedRequest, Profile, Document, DistressedProperty, County, LeadType } from '../types.js'
-import { COUNTIES } from '../matching.js'
+import { COUNTIES, LICENSED_TYPES } from '../matching.js'
 import { UUID_RE } from '../cases.js'
 import multer from 'multer'
 import { parse } from 'csv-parse/sync'
@@ -585,6 +585,75 @@ router.delete('/ads/:id', asyncHandler(async (req, res) => {
     return
   }
   res.json({ ok: true })
+}))
+
+// ---------------------------------------------------------------------------
+// License verification: staff check a professional's number on the state's public lookup
+// (DRE for agents and brokers, State Bar for attorneys), then mark it verified. Homeowners see
+// "License verified" only after this. A professional changing their number or type clears it.
+// ---------------------------------------------------------------------------
+const LICENSE_FIELDS = 'id, full_name, email, business_name, professional_type, license_number, license_verified, listed, created_at'
+
+// GET /api/admin/licenses?status=pending|verified|missing|all
+router.get('/licenses', asyncHandler(async (req, res) => {
+  const status = typeof req.query.status === 'string' ? req.query.status : 'pending'
+  let query = supabaseAdmin.from('profiles').select(LICENSE_FIELDS)
+    .eq('role', 'investor').in('professional_type', LICENSED_TYPES as string[])
+    .order('created_at', { ascending: true }).limit(500)
+  if (status === 'pending') query = query.eq('license_verified', false).not('license_number', 'is', null)
+  else if (status === 'verified') query = query.eq('license_verified', true)
+  else if (status === 'missing') query = query.is('license_number', null)
+  else if (status !== 'all') {
+    res.status(400).json({ error: 'Unknown status filter' })
+    return
+  }
+  const { data, error } = await query
+  if (error) {
+    console.error('Failed to load licenses:', error)
+    res.status(500).json({ error: 'Failed to load licenses' })
+    return
+  }
+  res.json({ professionals: data })
+}))
+
+// PATCH /api/admin/licenses/:id { verified, license_number } — license_number is the number the
+// admin looked up; if the professional changed it meanwhile, the check is refused (409)
+router.patch('/licenses/:id', asyncHandler(async (req, res) => {
+  const id = String(req.params.id)
+  const { verified, license_number } = req.body ?? {}
+  if (!UUID_RE.test(id) || typeof verified !== 'boolean' || typeof license_number !== 'string') {
+    res.status(400).json({ error: 'Invalid request' })
+    return
+  }
+  const { data: pro, error: proError } = await supabaseAdmin.from('profiles')
+    .select('role, professional_type, license_number').eq('id', id).maybeSingle()
+  if (proError) {
+    console.error('Failed to load professional for license check:', proError)
+    res.status(500).json({ error: 'Failed to update the license' })
+    return
+  }
+  if (!pro || pro.role !== 'investor' || !LICENSED_TYPES.includes(pro.professional_type)) {
+    res.status(404).json({ error: 'Licensed professional not found' })
+    return
+  }
+  if (!pro.license_number || pro.license_number !== license_number) {
+    res.status(409).json({ error: 'Their license number changed while you were checking. Reload and check the new one.', code: 'license_changed' })
+    return
+  }
+  // Conditional on the same number, so a change made at this moment isn't marked verified
+  const { data, error } = await supabaseAdmin.from('profiles')
+    .update({ license_verified: verified }).eq('id', id).eq('license_number', license_number)
+    .select(LICENSE_FIELDS).maybeSingle()
+  if (error) {
+    console.error('Failed to update license verification:', error)
+    res.status(500).json({ error: 'Failed to update the license' })
+    return
+  }
+  if (!data) {
+    res.status(409).json({ error: 'Their license number changed while you were checking. Reload and check the new one.', code: 'license_changed' })
+    return
+  }
+  res.json(data)
 }))
 
 export default router
