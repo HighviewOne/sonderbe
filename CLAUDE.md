@@ -18,7 +18,7 @@ Auth (signIn, signOut, password reset) stays on the **frontend** via the Supabas
   - `/api/checklist` — GET own, PUT upsert, GET /:userId (admin)
   - `/api/submissions` — GET (own or all if admin), POST (optional auth), PATCH /:id (admin)
   - `/api/documents` — GET own, POST /upload (multer 10MB), DELETE /:id, GET /:id/download, GET /user/:userId (admin), PATCH /:id (admin)
-  - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads, /ads (CRUD), GET /licenses?status=pending|verified|missing|all + PATCH /licenses/:id `{verified, license_number}` (409 `license_changed` if the number on file differs, so a number changed mid-check is never marked verified)
+  - `/api/admin` — GET /stats, /clients, /clients/:id (clients + investors; admins 404), /documents, /properties (CRUD incl. GET /properties/:id for the edit form), /properties/csv-upload, /investors, /csv-uploads, /ads (CRUD), GET /licenses?status=pending|verified|missing|all + GET /licenses/:id/history + PATCH /licenses/:id `{verified, license_number}` (409 `license_changed` if the number on file differs, so a number changed mid-check is never marked verified; writes via the `set_license_verification` RPC)
   - `/api/investor` — GET /properties (search/filter/paginate), /properties/:id, /stats, /subscription
   - `/api/stripe` — POST /create-checkout, /webhook (raw body), /portal
   - `/api/match` — homeowner (role client): GET own request + consent text + chosen professional + timeline + documents, POST choose a professional (`professional_id`, consent required; creates the request already `claimed`), PATCH /documents/:docId (mark sent + note), DELETE withdraw
@@ -94,8 +94,10 @@ Migration `003_directory_and_tracker.sql` (profile listing fields, `match_reques
   `cd server && npm run seed:demo` wipes and recreates demo accounts (`*@example.com`, password `SonderDemo-2026`) and ads.
   The seed script refuses the live project ref.
 - License verification: admin screen `/admin/licenses` (`LicenseManager.tsx`) lists agents, brokers and attorneys with a
-  link to the DRE or State Bar public lookup and Mark verified / Remove verification. It records no who/when (would need a
-  migration). 003–007 are not applied to the live project.
+  link to the DRE or State Bar public lookup and Mark verified / Remove verification. Migration 008: `profiles.license_verified_at/_by`
+  (who/when) and `license_checks` (every verified / removed / cleared action, shown under "History"). Staff actions go through
+  the `set_license_verification` RPC (update + history row in one transaction); a DB trigger clears a verified license and logs
+  `cleared` whenever `license_number` or `professional_type` changes, on any code path. 003–008 are not applied to the live project.
 
 ## Homeowner information, multiple professionals, brokerages (2026-11-15, same branch)
 

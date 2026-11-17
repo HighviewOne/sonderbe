@@ -196,6 +196,20 @@ s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': Tru
 check('licenses: verifying a number that is no longer on file is refused', s == 409 and d.get('code') == 'license_changed', (s, d))
 s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': True, 'license_number': mrow['license_number']})
 check('licenses: admin marks verified', s == 200 and d['license_verified'] is True, (s, d))
+check('licenses: records who verified and when', d.get('license_verified_at') and d.get('verified_by_name') == 'Demo Admin', d)
+s, h = call('GET', f'{API}/admin/licenses/{maria_id}/history', admin)
+check('licenses: history logs the check with the number and admin',
+      s == 200 and h['checks'][0]['action'] == 'verified' and h['checks'][0]['admin_name'] == 'Demo Admin'
+      and h['checks'][0]['license_number'] == mrow['license_number'], (s, h))
+s, _ = call('GET', f'{API}/admin/licenses/{maria_id}/history', maria)
+check('licenses: history is admin only', s == 403)
+s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': False, 'license_number': mrow['license_number']})
+check('licenses: removing verification clears who and when', s == 200 and d['license_verified'] is False
+      and d['license_verified_at'] is None and d['verified_by_name'] is None, (s, d))
+s, h = call('GET', f'{API}/admin/licenses/{maria_id}/history', admin)
+check('licenses: history keeps the removal and the earlier check', [c['action'] for c in h['checks'][:2]] == ['removed', 'verified'], h)
+s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': True, 'license_number': mrow['license_number']})
+check('licenses: verified again', s == 200 and d['license_verified'] is True, (s, d))
 s, d = call('GET', f'{API}/directory?county=Los%20Angeles', home)
 check('licenses: directory shows verified', any(p['id'] == maria_id and p['license_verified'] for p in d['professionals']))
 s, d = call('GET', f'{API}/admin/licenses?status=verified', admin)
@@ -208,6 +222,12 @@ s, p = call('GET', f'{API}/leads/profile', maria)
 body = {'business_name': p['business_name'], 'bio': p['bio'], 'website': p['website'], 'pledge': True, 'listed': p['listed'], 'professional_type': p['professional_type']}
 s, d = call('PUT', f'{API}/leads/profile', maria, {**body, 'license_number': 'DEMO-DRE-09999999'})
 check('licenses: changing the number clears verification', s == 200 and d['license_verified'] is False, (s, d))
+s, r = rest('GET', f'profiles?select=license_verified_at,license_verified_by&id=eq.{maria_id}')
+check('licenses: number change clears who and when', r[0]['license_verified_at'] is None and r[0]['license_verified_by'] is None, r)
+s, h = call('GET', f'{API}/admin/licenses/{maria_id}/history', admin)
+check('licenses: history logs the clear with the old number and no admin',
+      h['checks'][0]['action'] == 'cleared' and h['checks'][0]['license_number'] == mrow['license_number']
+      and h['checks'][0]['admin_name'] is None, h)
 s, d = call('PATCH', f'{API}/admin/licenses/{maria_id}', admin, {'verified': True, 'license_number': mrow['license_number']})
 check('licenses: old number can no longer be verified', s == 409)
 

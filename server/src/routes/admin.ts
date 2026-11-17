@@ -592,7 +592,23 @@ router.delete('/ads/:id', asyncHandler(async (req, res) => {
 // (DRE for agents and brokers, State Bar for attorneys), then mark it verified. Homeowners see
 // "License verified" only after this. A professional changing their number or type clears it.
 // ---------------------------------------------------------------------------
-const LICENSE_FIELDS = 'id, full_name, email, business_name, professional_type, license_number, license_verified, listed, created_at'
+const LICENSE_FIELDS = 'id, full_name, email, business_name, professional_type, license_number, license_verified, license_verified_at, license_verified_by, listed, created_at'
+
+type LicenseRow = { license_verified_by: string | null } & Record<string, unknown>
+
+// Adds verified_by_name (the staff member's name or email) to each row
+async function withVerifierNames<T extends LicenseRow>(rows: T[]): Promise<(T & { verified_by_name: string | null })[]> {
+  const ids = [...new Set(rows.map(r => r.license_verified_by).filter((id): id is string => Boolean(id)))]
+  const names = await adminNames(ids)
+  return rows.map(r => ({ ...r, verified_by_name: r.license_verified_by ? names.get(r.license_verified_by) ?? 'Removed admin' : null }))
+}
+
+async function adminNames(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map()
+  const { data, error } = await supabaseAdmin.from('profiles').select('id, full_name, email').in('id', ids)
+  if (error) throw error
+  return new Map((data ?? []).map(p => [p.id as string, (p.full_name as string | null) || (p.email as string)]))
+}
 
 // GET /api/admin/licenses?status=pending|verified|missing|all
 router.get('/licenses', asyncHandler(async (req, res) => {
@@ -613,12 +629,35 @@ router.get('/licenses', asyncHandler(async (req, res) => {
     res.status(500).json({ error: 'Failed to load licenses' })
     return
   }
-  res.json({ professionals: data })
+  res.json({ professionals: await withVerifierNames(data as LicenseRow[]) })
+}))
+
+// GET /api/admin/licenses/:id/history — every check of this professional's license, newest first
+router.get('/licenses/:id/history', asyncHandler(async (req, res) => {
+  const id = String(req.params.id)
+  if (!UUID_RE.test(id)) {
+    res.status(400).json({ error: 'Invalid request' })
+    return
+  }
+  const { data, error } = await supabaseAdmin.from('license_checks')
+    .select('id, license_number, professional_type, action, admin_id, created_at')
+    .eq('professional_id', id).order('created_at', { ascending: false }).limit(100)
+  if (error) {
+    console.error('Failed to load license history:', error)
+    res.status(500).json({ error: 'Failed to load the history' })
+    return
+  }
+  const names = await adminNames([...new Set(data.map(c => c.admin_id).filter((a): a is string => Boolean(a)))])
+  res.json({
+    checks: data.map(c => ({ ...c, admin_name: c.admin_id ? names.get(c.admin_id) ?? 'Removed admin' : null }))
+  })
 }))
 
 // PATCH /api/admin/licenses/:id { verified, license_number } — license_number is the number the
-// admin looked up; if the professional changed it meanwhile, the check is refused (409)
-router.patch('/licenses/:id', asyncHandler(async (req, res) => {
+// admin looked up; if the professional changed it meanwhile, the check is refused (409).
+// set_license_verification (migration 008) records who and when, and writes the history row
+// in the same transaction.
+router.patch('/licenses/:id', asyncHandler(async (req: AuthenticatedRequest, res) => {
   const id = String(req.params.id)
   const { verified, license_number } = req.body ?? {}
   if (!UUID_RE.test(id) || typeof verified !== 'boolean' || typeof license_number !== 'string') {
@@ -636,24 +675,31 @@ router.patch('/licenses/:id', asyncHandler(async (req, res) => {
     res.status(404).json({ error: 'Licensed professional not found' })
     return
   }
+  const changed = () => res.status(409).json({ error: 'Their license number changed while you were checking. Reload and check the new one.', code: 'license_changed' })
   if (!pro.license_number || pro.license_number !== license_number) {
-    res.status(409).json({ error: 'Their license number changed while you were checking. Reload and check the new one.', code: 'license_changed' })
+    changed()
     return
   }
   // Conditional on the same number, so a change made at this moment isn't marked verified
-  const { data, error } = await supabaseAdmin.from('profiles')
-    .update({ license_verified: verified }).eq('id', id).eq('license_number', license_number)
-    .select(LICENSE_FIELDS).maybeSingle()
+  const { data: applied, error } = await supabaseAdmin.rpc('set_license_verification', {
+    p_professional: id, p_license_number: license_number, p_verified: verified, p_admin: req.userId!
+  })
   if (error) {
     console.error('Failed to update license verification:', error)
     res.status(500).json({ error: 'Failed to update the license' })
     return
   }
-  if (!data) {
-    res.status(409).json({ error: 'Their license number changed while you were checking. Reload and check the new one.', code: 'license_changed' })
+  if (!applied) {
+    changed()
     return
   }
-  res.json(data)
+  const { data, error: readError } = await supabaseAdmin.from('profiles').select(LICENSE_FIELDS).eq('id', id).single()
+  if (readError) {
+    console.error('Failed to reload license after update:', readError)
+    res.status(500).json({ error: 'Saved, but failed to reload. Please refresh.' })
+    return
+  }
+  res.json((await withVerifierNames([data as LicenseRow]))[0])
 }))
 
 export default router

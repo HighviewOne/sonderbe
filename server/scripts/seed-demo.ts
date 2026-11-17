@@ -164,6 +164,8 @@ async function seedPros() {
       website: p.website,
       license_number: p.license_number,
       license_verified: p.license_verified,
+      // Seeded as verified before any admin existed, so no license_verified_by
+      license_verified_at: p.license_verified ? daysAgo(29) : null,
       no_upfront_fee_pledged_at: daysAgo(30),
       listed: true,
       service_counties: p.service_counties

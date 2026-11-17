@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiGet, apiPatch } from '../../lib/api'
 import { professionalTypeLabel } from '../../lib/constants'
 import { formatDate } from '../../lib/format'
@@ -11,8 +11,25 @@ type Pro = {
   professional_type: 'agent' | 'broker' | 'attorney'
   license_number: string | null
   license_verified: boolean
+  license_verified_at: string | null
+  verified_by_name: string | null
   listed: boolean
   created_at: string
+}
+
+type Check = {
+  id: string
+  license_number: string | null
+  professional_type: string | null
+  action: 'verified' | 'removed' | 'cleared'
+  admin_name: string | null
+  created_at: string
+}
+
+const ACTION_LABEL: Record<Check['action'], string> = {
+  verified: 'Verified',
+  removed: 'Verification removed',
+  cleared: 'Cleared: the professional changed their number or type'
 }
 
 type Filter = 'pending' | 'verified' | 'missing' | 'all'
@@ -33,28 +50,70 @@ function lookup(pro: Pro): { href: string; label: string } | null {
     : { href: `https://www2.dre.ca.gov/PublicASP/pplinfo.asp?License_id=${n}`, label: 'Look up on the DRE site' }
 }
 
+// Every check of one professional's license, newest first, loaded when opened
+function LicenseHistory({ proId }: { proId: string }) {
+  const [checks, setChecks] = useState<Check[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    apiGet<{ checks: Check[] }>(`/admin/licenses/${proId}/history`)
+      .then(res => setChecks(res.checks))
+      .catch(err => {
+        console.error('Error loading license history:', err)
+        setError('Failed to load the history.')
+      })
+  }, [proId])
+
+  if (error) return <div className="error-message">{error}</div>
+  if (!checks) return <p>Loading...</p>
+  if (checks.length === 0) return <p className="empty-state">No checks recorded yet.</p>
+  return (
+    <ul className="license-history">
+      {checks.map(c => (
+        <li key={c.id}>
+          {formatDate(c.created_at)} · {ACTION_LABEL[c.action]}
+          {c.license_number && <> · {c.license_number}</>}
+          {c.admin_name && <> · by {c.admin_name}</>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 // Staff check each professional's license on the state's site, then mark it verified. Homeowners
 // see "License verified" only after this; a professional changing their number or type clears it.
 export function LicenseManager() {
   const [filter, setFilter] = useState<Filter>('pending')
+  // The tab showing when a save finishes, which may differ from the one it started on
+  const filterRef = useRef<Filter>(filter)
   const [pros, setPros] = useState<Pro[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null)
+  const [historyOpen, setHistoryOpen] = useState<string | null>(null)
+
+  // Only the latest request may update the list: switching tabs while a reload is in
+  // flight must not show the old tab's results under the new one
+  const latest = useRef(0)
 
   // No synchronous setState here — it runs from the effect
   const fetchPros = useCallback((f: Filter) => {
+    const request = ++latest.current
     apiGet<{ professionals: Pro[] }>(`/admin/licenses?status=${f}`)
       .then(res => {
+        if (request !== latest.current) return
         setPros(res.professionals)
         setError(null)
       })
       .catch(err => {
+        if (request !== latest.current) return
         console.error('Error loading licenses:', err)
         setError('Failed to load licenses. Please refresh.')
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (request === latest.current) setLoading(false)
+      })
   }, [])
 
   useEffect(() => {
@@ -65,6 +124,7 @@ export function LicenseManager() {
     if (f === filter) return
     setLoading(true)
     setRowError(null)
+    filterRef.current = f
     setFilter(f)
   }
 
@@ -73,11 +133,11 @@ export function LicenseManager() {
     setRowError(null)
     try {
       await apiPatch(`/admin/licenses/${pro.id}`, { verified, license_number: pro.license_number })
-      fetchPros(filter)
+      fetchPros(filterRef.current)
     } catch (e) {
       setRowError({ id: pro.id, message: e instanceof Error ? e.message : 'Failed to update the license' })
       // Their number may have changed: show what's on file now
-      fetchPros(filter)
+      fetchPros(filterRef.current)
     } finally {
       setBusy(null)
     }
@@ -130,6 +190,12 @@ export function LicenseManager() {
                     {pro.professional_type === 'attorney' ? 'State Bar number' : 'DRE license number'}:{' '}
                     <strong>{pro.license_number ?? 'not entered'}</strong>
                   </p>
+                  {pro.license_verified && pro.license_verified_at && (
+                    <p className="pro-subtitle">
+                      Verified {formatDate(pro.license_verified_at)}
+                      {pro.verified_by_name ? ` by ${pro.verified_by_name}` : ''}
+                    </p>
+                  )}
                   <div className="save-row">
                     {link && (
                       <a className="btn-link" href={link.href} target="_blank" rel="noopener noreferrer">{link.label}</a>
@@ -145,7 +211,12 @@ export function LicenseManager() {
                         {busy === pro.id ? 'Saving...' : 'Mark verified'}
                       </button>
                     ))}
+                    <button type="button" className="btn-link" aria-expanded={historyOpen === pro.id}
+                      onClick={() => setHistoryOpen(historyOpen === pro.id ? null : pro.id)}>
+                      {historyOpen === pro.id ? 'Hide history' : 'History'}
+                    </button>
                   </div>
+                  {historyOpen === pro.id && <LicenseHistory key={`${pro.id}-${pro.license_verified_at}`} proId={pro.id} />}
                   {rowError?.id === pro.id && <div className="error-message" role="alert">{rowError.message}</div>}
                 </li>
               )
