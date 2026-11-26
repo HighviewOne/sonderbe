@@ -8,8 +8,11 @@ the service-role key. It reads distressed_properties, whose RLS has no policies,
 gets an empty list without touching the (self-recursive) profiles policies; the query
 still counts as activity.
 
-Runs from cron on hamptonserver as ~/sonderbe_keepalive/supabase_keepalive.py.
-Config: ~/sonderbe_keepalive/config with SUPABASE_URL=... and SUPABASE_ANON_KEY=...
+Runs from cron on hamptonserver as ~/sonderbe_keepalive/supabase_keepalive.py [config name].
+Config: ~/sonderbe_keepalive/config (default) with SUPABASE_URL=..., SUPABASE_ANON_KEY=... and
+optionally LABEL=... (names the project in alert emails). Pass another file name, e.g.
+`config-test` for the sonderbe-test project behind the demo site; each config keeps its own
+state file (state.json for the default, state-<name>.json otherwise).
 Alerts: emails EMAIL_TO from ~/.nod_email after 2 failed runs in a row, and once on
 recovery. Silent otherwise.
 
@@ -21,7 +24,6 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-STATE = HERE / "state.json"
 FAILS_BEFORE_ALERT = 2
 
 
@@ -64,22 +66,24 @@ def email(subject, body):
         s.sendmail(msg["From"], [cfg["EMAIL_TO"]], msg.as_string())
 
 
-def main():
-    cfg = read_kv(HERE / "config")
+def main(config_name="config"):
+    cfg = read_kv(HERE / config_name)
+    label = cfg.get("LABEL", "SonderBe Supabase")
+    STATE = HERE / ("state.json" if config_name == "config" else f"state-{config_name}.json")
     state = json.loads(STATE.read_text()) if STATE.exists() else {"fails": 0, "alerted": False}
     ok, detail = ping(cfg["SUPABASE_URL"], cfg["SUPABASE_ANON_KEY"])
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    print(f"{now} {'ok' if ok else 'FAIL'} {detail}")
+    print(f"{now} {label} {'ok' if ok else 'FAIL'} {detail}")
 
     if ok:
         if state["alerted"]:
-            email("SonderBe Supabase is answering again",
+            email(f"{label} is answering again",
                   f"The keep-alive ping succeeded at {now} after {state['fails']} failed run(s).\n")
         state = {"fails": 0, "alerted": False, "last_ok": now}
     else:
         state["fails"] += 1
         if state["fails"] >= FAILS_BEFORE_ALERT and not state["alerted"]:
-            email("SonderBe Supabase keep-alive failing",
+            email(f"{label} keep-alive failing",
                   f"The daily ping to {cfg['SUPABASE_URL']} has failed {state['fails']} runs in a row.\n"
                   f"Latest: {detail}\nLast success: {state.get('last_ok', 'unknown')}\n\n"
                   "If the project is paused, resume it at https://supabase.com/dashboard "
@@ -91,4 +95,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(*sys.argv[1:2]))
