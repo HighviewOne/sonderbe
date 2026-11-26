@@ -85,7 +85,7 @@ checklist (homeowner ticks "sent", professional ticks "received"; files never to
 `/investor` (My Clients, case manager per client) and `/investor/listing`. Sponsored service ads at `/portal/moving`.
 Migration `003_directory_and_tracker.sql` (profile listing fields, `match_requests.stage/next_step/outcome`, `case_events`,
 `case_documents`, `service_ads`, `increment_ad_counter`). Legal reasoning: the attorney brief Claude Doc linked in memory.
-- **API tests:** `server/tests/api/test_*.py` (Python stdlib only, 4 suites). `cd server && npm run test:api` with the
+- **API tests:** `server/tests/api/test_*.py` (Python stdlib only, 5 suites; `test_5_rpc_lockdown.py` checks every SQL function is blocked for the publishable key and logged-in users). `cd server && npm run test:api` with the
   backend running via `npm run dev:test`; it reseeds before each suite and at the end, and refuses the live project.
   Not in CI: it needs the test project's keys and a running backend (CI would need repo secrets; not set up).
   `RATE_LIMIT_MAX` in `.env.test.local` lifts the 200 req/15 min limiter for the suites.

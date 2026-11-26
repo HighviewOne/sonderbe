@@ -8,7 +8,7 @@ status=0
 for t in tests/api/test_*.py; do
   npm run --silent seed:demo > /dev/null || { echo "Seeding failed"; exit 1; }
   printf '%s: ' "$(basename "$t")"
-  python3 -I "$t" | grep -E '^FAIL|passed' || status=1
+  python3 -I "$t" | grep -E '^FAIL|^SKIP|passed' || status=1
   [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
 done
 npm run --silent seed:demo > /dev/null
